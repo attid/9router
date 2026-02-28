@@ -1065,7 +1065,7 @@ export default function APIPageClient({ machineId }) {
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
                   {/* Token limits */}
-                  {(key.limits?.hourly || key.limits?.daily || key.limits?.weekly || keyUsage[key.id]) && editingLimits !== key.id && (
+                  {(key.limits?.hourly || key.limits?.daily || key.limits?.weekly) && editingLimits !== key.id && (
                     <div className="mt-2 flex flex-col gap-1">
                       <LimitProgressBar used={keyUsage[key.id]?.hourly?.used} limit={key.limits?.hourly} label="Hourly" />
                       <LimitProgressBar used={keyUsage[key.id]?.daily?.used} limit={key.limits?.daily} label="Daily" />
