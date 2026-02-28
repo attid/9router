@@ -661,19 +661,20 @@ function generateShortKey() {
  * Create API key
  * @param {string} name - Key name
  * @param {string} machineId - MachineId (required)
+ * @param {object|null} limits - Optional token limits { hourly, daily, weekly }
  */
-export async function createApiKey(name, machineId) {
+export async function createApiKey(name, machineId, limits = null) {
   if (!machineId) {
     throw new Error("machineId is required");
   }
-  
+
   const db = await getDb();
   const now = new Date().toISOString();
-  
+
   // Always use new format: sk-{machineId}-{keyId}-{crc8}
   const { generateApiKeyWithMachine } = await import("@/shared/utils/apiKey");
   const result = generateApiKeyWithMachine(machineId);
-  
+
   const apiKey = {
     id: uuidv4(),
     name: name,
@@ -682,10 +683,19 @@ export async function createApiKey(name, machineId) {
     isActive: true,
     createdAt: now,
   };
-  
+
+  // Add limits if provided
+  if (limits) {
+    apiKey.limits = {
+      hourly: limits.hourly ?? null,
+      daily: limits.daily ?? null,
+      weekly: limits.weekly ?? null,
+    };
+  }
+
   db.data.apiKeys.push(apiKey);
   await db.write();
-  
+
   return apiKey;
 }
 
@@ -719,6 +729,17 @@ export async function updateApiKey(id, data) {
   const db = await getDb();
   const index = db.data.apiKeys.findIndex(k => k.id === id);
   if (index === -1) return null;
+
+  // Handle limits separately to allow partial updates
+  if (data.limits !== undefined) {
+    const existingLimits = db.data.apiKeys[index].limits || {};
+    data.limits = {
+      hourly: data.limits.hourly ?? existingLimits.hourly ?? null,
+      daily: data.limits.daily ?? existingLimits.daily ?? null,
+      weekly: data.limits.weekly ?? existingLimits.weekly ?? null,
+    };
+  }
+
   db.data.apiKeys[index] = {
     ...db.data.apiKeys[index],
     ...data,
@@ -734,6 +755,14 @@ export async function validateApiKey(key) {
   const db = await getDb();
   const found = db.data.apiKeys.find(k => k.key === key);
   return found && found.isActive !== false;
+}
+
+/**
+ * Get API key object by its key string value
+ */
+export async function getApiKeyByValue(keyValue) {
+  const db = await getDb();
+  return db.data.apiKeys.find(k => k.key === keyValue) || null;
 }
 
 // ============ Data Cleanup ============
