@@ -19,6 +19,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { checkKeyLimits } from "../services/keyLimits.js";
 
 /**
  * Handle chat completion request
@@ -76,6 +77,30 @@ export async function handleChat(request, clientRawRequest = null) {
     if (!valid) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    }
+  }
+
+  // Check API key token limits
+  if (apiKey) {
+    const limitCheck = await checkKeyLimits(apiKey);
+    if (!limitCheck.allowed) {
+      log.warn("AUTH", `Token limit exceeded for key ${log.maskKey(apiKey)}`);
+      return new Response(
+        JSON.stringify({
+          error: {
+            message: limitCheck.error,
+            type: "rate_limit_error",
+            code: "token_limit_exceeded",
+          },
+        }),
+        {
+          status: HTTP_STATUS.RATE_LIMITED,
+          headers: {
+            "Content-Type": "application/json",
+            ...(limitCheck.retryAfter ? { "Retry-After": String(limitCheck.retryAfter) } : {}),
+          },
+        }
+      );
     }
   }
 
