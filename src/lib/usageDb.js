@@ -299,7 +299,7 @@ export async function getUsageByApiKey(apiKey, since) {
   for (const entry of history) {
     if (entry.apiKey !== apiKey) continue;
     if (new Date(entry.timestamp).getTime() < sinceMs) continue;
-    total += (entry.tokens?.prompt_tokens || 0) + (entry.tokens?.completion_tokens || 0);
+    total += (entry.tokens?.prompt_tokens || entry.tokens?.input_tokens || 0) + (entry.tokens?.completion_tokens || entry.tokens?.output_tokens || 0);
   }
   return total;
 }
