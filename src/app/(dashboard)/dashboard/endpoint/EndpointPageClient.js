@@ -26,6 +26,7 @@ export default function APIPageClient({ machineId }) {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyLimits, setNewKeyLimits] = useState({ hourly: "", daily: "", weekly: "" });
   const [createdKey, setCreatedKey] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
@@ -574,11 +575,19 @@ export default function APIPageClient({ machineId }) {
   const handleCreateKey = async () => {
     if (!newKeyName.trim()) return;
 
+    const limits = {};
+    if (newKeyLimits.hourly) limits.hourly = parseInt(newKeyLimits.hourly, 10);
+    if (newKeyLimits.daily) limits.daily = parseInt(newKeyLimits.daily, 10);
+    if (newKeyLimits.weekly) limits.weekly = parseInt(newKeyLimits.weekly, 10);
+
     try {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({
+          name: newKeyName,
+          ...(Object.keys(limits).length > 0 ? { limits } : {}),
+        }),
       });
       const data = await res.json();
 
@@ -586,6 +595,7 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewKeyLimits({ hourly: "", daily: "", weekly: "" });
         setShowAddModal(false);
       }
     } catch (error) {
@@ -1025,6 +1035,7 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewKeyLimits({ hourly: "", daily: "", weekly: "" });
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1034,6 +1045,35 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+          <div className="border-t border-border pt-3">
+            <p className="text-sm font-medium mb-2">Token Limits <span className="text-text-muted font-normal">(optional)</span></p>
+            <div className="flex flex-col gap-2">
+              <Input
+                label="Hourly limit"
+                type="number"
+                min="0"
+                value={newKeyLimits.hourly}
+                onChange={(e) => setNewKeyLimits(prev => ({ ...prev, hourly: e.target.value }))}
+                placeholder="Unlimited"
+              />
+              <Input
+                label="Daily limit"
+                type="number"
+                min="0"
+                value={newKeyLimits.daily}
+                onChange={(e) => setNewKeyLimits(prev => ({ ...prev, daily: e.target.value }))}
+                placeholder="Unlimited"
+              />
+              <Input
+                label="Weekly limit"
+                type="number"
+                min="0"
+                value={newKeyLimits.weekly}
+                onChange={(e) => setNewKeyLimits(prev => ({ ...prev, weekly: e.target.value }))}
+                placeholder="Unlimited"
+              />
+            </div>
+          </div>
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
@@ -1042,6 +1082,7 @@ export default function APIPageClient({ machineId }) {
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+                setNewKeyLimits({ hourly: "", daily: "", weekly: "" });
               }}
               variant="ghost"
               fullWidth
