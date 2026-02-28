@@ -285,6 +285,26 @@ export async function getUsageHistory(filter = {}) {
 }
 
 /**
+ * Get total token usage for a specific API key since a given time
+ * @param {string} apiKey - The API key value
+ * @param {Date} since - Start of time window
+ * @returns {Promise<number>} Total tokens (prompt + completion)
+ */
+export async function getUsageByApiKey(apiKey, since) {
+  const db = await getUsageDb();
+  const history = db.data.history || [];
+  const sinceMs = since.getTime();
+
+  let total = 0;
+  for (const entry of history) {
+    if (entry.apiKey !== apiKey) continue;
+    if (new Date(entry.timestamp).getTime() < sinceMs) continue;
+    total += (entry.tokens?.prompt_tokens || 0) + (entry.tokens?.completion_tokens || 0);
+  }
+  return total;
+}
+
+/**
  * Format date as dd-mm-yyyy h:m:s
  */
 function formatLogDate(date = new Date()) {
