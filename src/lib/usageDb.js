@@ -248,7 +248,7 @@ export async function saveRequestUsage(entry) {
     // if (db.data.history.length > 10000) db.data.history.shift();
 
     await db.write();
-    statsEmitter.emit("update");
+    statsEmitter.emit("update", entry);
   } catch (error) {
     console.error("Failed to save usage stats:", error);
   }
