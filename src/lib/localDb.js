@@ -5,6 +5,7 @@ import path from "node:path";
 import fs from "node:fs";
 import lockfile from "proper-lockfile";
 import { DATA_DIR } from "@/lib/dataDir.js";
+import { normalizeComboModels } from "./comboUtils.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const DB_FILE = path.join(DATA_DIR, "db.json");
@@ -570,7 +571,7 @@ export async function createCombo(data) {
   const combo = {
     id: uuidv4(),
     name: data.name,
-    models: data.models || [],
+    models: normalizeComboModels(data.models),
     kind: data.kind || null,
     createdAt: now,
     updatedAt: now,
@@ -588,6 +589,9 @@ export async function updateCombo(id, data) {
   const index = db.data.combos.findIndex(c => c.id === id);
   if (index === -1) return null;
 
+  if (data.models) {
+    data = { ...data, models: normalizeComboModels(data.models) };
+  }
   db.data.combos[index] = {
     ...db.data.combos[index],
     ...data,
