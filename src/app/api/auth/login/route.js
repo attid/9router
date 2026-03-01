@@ -3,10 +3,7 @@ import { getSettings } from "@/lib/localDb";
 import bcrypt from "bcryptjs";
 import { SignJWT } from "jose";
 import { cookies } from "next/headers";
-
-const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "9router-default-secret-change-me"
-);
+import { JWT_SECRET } from "@/lib/auth";
 
 export async function POST(request) {
   try {
@@ -34,7 +31,7 @@ export async function POST(request) {
       const token = await new SignJWT({ authenticated: true })
         .setProtectedHeader({ alg: "HS256" })
         .setExpirationTime("24h")
-        .sign(SECRET);
+        .sign(JWT_SECRET);
 
       const cookieStore = await cookies();
       cookieStore.set("auth_token", token, {
