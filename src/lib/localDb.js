@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
+import { normalizeComboModels } from "./comboUtils.js";
 
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
 
@@ -590,7 +591,7 @@ export async function createCombo(data) {
   const combo = {
     id: uuidv4(),
     name: data.name,
-    models: data.models || [],
+    models: normalizeComboModels(data.models),
     createdAt: now,
     updatedAt: now,
   };
@@ -606,16 +607,20 @@ export async function createCombo(data) {
 export async function updateCombo(id, data) {
   const db = await getDb();
   if (!db.data.combos) db.data.combos = [];
-  
+
   const index = db.data.combos.findIndex(c => c.id === id);
   if (index === -1) return null;
-  
+
+  if (data.models) {
+    data = { ...data, models: normalizeComboModels(data.models) };
+  }
+
   db.data.combos[index] = {
     ...db.data.combos[index],
     ...data,
     updatedAt: new Date().toISOString(),
   };
-  
+
   await db.write();
   return db.data.combos[index];
 }
