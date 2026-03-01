@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { normalizeComboModels } from "../../src/lib/comboUtils.js";
+import { buildWeightedCycle, pickNextModel } from "../../open-sse/services/combo.js";
 
 describe("normalizeComboModels", () => {
   it("converts string array to objects with weight 1", () => {
@@ -37,5 +38,47 @@ describe("normalizeComboModels", () => {
   it("defaults missing weight to 1", () => {
     const result = normalizeComboModels([{ model: "cc/claude-sonnet-4" }]);
     expect(result).toEqual([{ model: "cc/claude-sonnet-4", weight: 1 }]);
+  });
+});
+
+describe("buildWeightedCycle", () => {
+  it("expands weights into cycle array", () => {
+    const models = [
+      { model: "A", weight: 2 },
+      { model: "B", weight: 1 },
+    ];
+    expect(buildWeightedCycle(models)).toEqual(["A", "A", "B"]);
+  });
+
+  it("returns empty for no weighted models", () => {
+    const models = [{ model: "A", weight: 0 }];
+    expect(buildWeightedCycle(models)).toEqual([]);
+  });
+
+  it("handles single model", () => {
+    const models = [{ model: "A", weight: 3 }];
+    expect(buildWeightedCycle(models)).toEqual(["A", "A", "A"]);
+  });
+});
+
+describe("pickNextModel", () => {
+  it("cycles through models round-robin", () => {
+    const counters = new Map();
+    const cycle = ["A", "A", "B"];
+
+    expect(pickNextModel("test-combo", cycle, counters)).toBe("A");
+    expect(pickNextModel("test-combo", cycle, counters)).toBe("A");
+    expect(pickNextModel("test-combo", cycle, counters)).toBe("B");
+    expect(pickNextModel("test-combo", cycle, counters)).toBe("A"); // wraps
+  });
+
+  it("maintains separate counters per combo", () => {
+    const counters = new Map();
+    const cycle = ["A", "B"];
+
+    expect(pickNextModel("combo1", cycle, counters)).toBe("A");
+    expect(pickNextModel("combo2", cycle, counters)).toBe("A");
+    expect(pickNextModel("combo1", cycle, counters)).toBe("B");
+    expect(pickNextModel("combo2", cycle, counters)).toBe("B");
   });
 });
