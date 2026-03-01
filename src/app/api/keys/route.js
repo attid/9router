@@ -19,21 +19,31 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { name } = body;
+    const { name, allowedModels } = body;
 
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
 
-    // Always get machineId from server
+    // Validate allowedModels if provided
+    if (allowedModels !== undefined && allowedModels !== null) {
+      if (!Array.isArray(allowedModels)) {
+        return NextResponse.json({ error: "allowedModels must be an array" }, { status: 400 });
+      }
+      if (allowedModels.some(m => typeof m !== "string" || !m.trim())) {
+        return NextResponse.json({ error: "allowedModels must contain non-empty strings" }, { status: 400 });
+      }
+    }
+
     const machineId = await getConsistentMachineId();
-    const apiKey = await createApiKey(name, machineId);
+    const apiKey = await createApiKey(name, machineId, allowedModels || null);
 
     return NextResponse.json({
       key: apiKey.key,
       name: apiKey.name,
       id: apiKey.id,
       machineId: apiKey.machineId,
+      allowedModels: apiKey.allowedModels || null,
     }, { status: 201 });
   } catch (error) {
     console.log("Error creating key:", error);
