@@ -299,7 +299,7 @@ export async function saveRequestUsage(entry) {
     }
 
     await db.write();
-    statsEmitter.emit("update");
+    statsEmitter.emit("update", entry);
   } catch (error) {
     console.error("Failed to save usage stats:", error);
   }
