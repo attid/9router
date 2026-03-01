@@ -1018,10 +1018,6 @@ export default function APIPageClient({ machineId }) {
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
-<<<<<<< HEAD
-                </div>
-                <div className="flex items-center gap-2">
-=======
                   {/* Allowed models */}
                   {key.allowedModels && key.allowedModels.length > 0 && editingModels !== key.id && (
                     <div className="mt-2 flex flex-wrap gap-1">
