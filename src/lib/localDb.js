@@ -624,8 +624,15 @@ function generateShortKey() {
   return result;
 }
 
-export async function createApiKey(name, machineId) {
-  if (!machineId) throw new Error("machineId is required");
+/**
+ * Create API key
+ * @param {string} name - Key name
+ * @param {string} machineId - MachineId (required)
+ */
+export async function createApiKey(name, machineId, allowedModels = null) {
+  if (!machineId) {
+    throw new Error("machineId is required");
+  }
 
   const db = await getDb();
   const now = new Date().toISOString();
@@ -642,6 +649,10 @@ export async function createApiKey(name, machineId) {
     createdAt: now,
   };
 
+  // Add allowedModels if provided
+  if (allowedModels && Array.isArray(allowedModels) && allowedModels.length > 0) {
+    apiKey.allowedModels = allowedModels;
+  }
   db.data.apiKeys.push(apiKey);
   await safeWrite(db);
   return apiKey;
@@ -666,7 +677,19 @@ export async function updateApiKey(id, data) {
   const db = await getDb();
   const index = db.data.apiKeys.findIndex(k => k.id === id);
   if (index === -1) return null;
-  db.data.apiKeys[index] = { ...db.data.apiKeys[index], ...data };
+
+  // Handle allowedModels
+  if (data.allowedModels !== undefined) {
+    // null or empty array = clear restrictions (allow all)
+    if (!data.allowedModels || (Array.isArray(data.allowedModels) && data.allowedModels.length === 0)) {
+      data.allowedModels = null;
+    }
+  }
+
+  db.data.apiKeys[index] = {
+    ...db.data.apiKeys[index],
+    ...data,
+  };
   await safeWrite(db);
   return db.data.apiKeys[index];
 }
@@ -675,6 +698,11 @@ export async function validateApiKey(key) {
   const db = await getDb();
   const found = db.data.apiKeys.find(k => k.key === key);
   return found && found.isActive !== false;
+}
+
+export async function getApiKeyByValue(keyValue) {
+  const db = await getDb();
+  return db.data.apiKeys.find(k => k.key === keyValue) || null;
 }
 
 export async function cleanupProviderConnections() {
