@@ -190,11 +190,16 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
               {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
               ) : (
-                combo.models.slice(0, 3).map((model, index) => (
-                  <code key={index} className="text-[10px] font-mono bg-black/5 dark:bg-white/5 px-1.5 py-0.5 rounded text-text-muted">
-                    {model}
-                  </code>
-                ))
+                combo.models.slice(0, 3).map((entry, index) => {
+                  const model = typeof entry === "string" ? entry : entry.model;
+                  const weight = typeof entry === "string" ? 1 : (entry.weight ?? 1);
+                  const isFallback = weight === 0;
+                  return (
+                    <code key={index} className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${isFallback ? "bg-amber-500/10 text-amber-700 dark:text-amber-400" : "bg-black/5 dark:bg-white/5 text-text-muted"}`}>
+                      {model}{weight > 1 ? ` ×${weight}` : ""}{isFallback ? " (fb)" : ""}
+                    </code>
+                  );
+                })
               )}
               {combo.models.length > 3 && (
                 <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
@@ -226,14 +231,15 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
 }
 
 // Inline editable model item
-function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({ index, model, weight, isFirst, isLast, onEdit, onWeightChange, onMoveUp, onMoveDown, onRemove }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(model);
+  const isFallback = weight === 0;
 
   const commit = () => {
     const trimmed = draft.trim();
     if (trimmed && trimmed !== model) onEdit(trimmed);
-    else setDraft(model); // revert if empty or unchanged
+    else setDraft(model);
     setEditing(false);
   };
 
@@ -243,7 +249,7 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
   };
 
   return (
-    <div className="group flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/[0.02] dark:bg-white/[0.02] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors">
+    <div className={`group flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors ${isFallback ? "bg-black/[0.01] dark:bg-white/[0.01] opacity-60" : "bg-black/[0.02] dark:bg-white/[0.02] hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"}`}>
       {/* Index badge */}
       <span className="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
 
@@ -265,6 +271,26 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
         >
           {model}
         </div>
+      )}
+
+      {/* Weight input */}
+      <div className="flex items-center gap-0.5 shrink-0">
+        <span className="text-[10px] text-text-muted">w:</span>
+        <input
+          type="number"
+          min="0"
+          value={weight}
+          onChange={(e) => onWeightChange(Math.max(0, parseInt(e.target.value) || 0))}
+          className="w-8 px-1 py-0.5 text-[10px] font-mono text-center bg-white dark:bg-black/20 border border-black/10 dark:border-white/10 rounded outline-none focus:border-primary/40"
+          title="Weight (0 = fallback only)"
+        />
+      </div>
+
+      {/* Fallback badge */}
+      {isFallback && (
+        <span className="text-[9px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1 py-0.5 rounded shrink-0">
+          fallback
+        </span>
       )}
 
       {/* Priority arrows */}
@@ -302,7 +328,12 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
 function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
-  const [models, setModels] = useState(combo?.models || []);
+  const [models, setModels] = useState(() => {
+    if (!combo?.models) return [];
+    return combo.models.map(m =>
+      typeof m === "string" ? { model: m, weight: 1 } : { model: m.model, weight: m.weight ?? 1 }
+    );
+  });
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -343,10 +374,16 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
     else setNameError("");
   };
 
-  const handleAddModel = (model) => {
-    if (!models.includes(model.value)) {
-      setModels([...models, model.value]);
+  const handleAddModel = (selected) => {
+    if (!models.some(m => m.model === selected.value)) {
+      setModels([...models, { model: selected.value, weight: 1 }]);
     }
+  };
+
+  const handleWeightChange = (index, weight) => {
+    const newModels = [...models];
+    newModels[index] = { ...newModels[index], weight };
+    setModels(newModels);
   };
 
   const handleRemoveModel = (index) => {
@@ -409,18 +446,20 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
               </div>
             ) : (
               <div className="flex flex-col gap-1 max-h-[200px] overflow-y-auto">
-                {models.map((model, index) => (
+                {models.map((entry, index) => (
                   <ModelItem
                     key={index}
                     index={index}
-                    model={model}
+                    model={entry.model}
+                    weight={entry.weight}
                     isFirst={index === 0}
                     isLast={index === models.length - 1}
                     onEdit={(newVal) => {
                       const updated = [...models];
-                      updated[index] = newVal;
+                      updated[index] = { ...updated[index], model: newVal };
                       setModels(updated);
                     }}
+                    onWeightChange={(w) => handleWeightChange(index, w)}
                     onMoveUp={() => handleMoveUp(index)}
                     onMoveDown={() => handleMoveDown(index)}
                     onRemove={() => handleRemoveModel(index)}
