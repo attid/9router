@@ -663,7 +663,7 @@ function generateShortKey() {
  * @param {string} machineId - MachineId (required)
  * @param {object|null} limits - Optional token limits { hourly, daily, weekly }
  */
-export async function createApiKey(name, machineId, limits = null) {
+export async function createApiKey(name, machineId, limits = null, allowedModels = null) {
   if (!machineId) {
     throw new Error("machineId is required");
   }
@@ -691,6 +691,11 @@ export async function createApiKey(name, machineId, limits = null) {
       daily: limits.daily ?? null,
       weekly: limits.weekly ?? null,
     };
+  }
+
+  // Add allowedModels if provided
+  if (allowedModels && Array.isArray(allowedModels) && allowedModels.length > 0) {
+    apiKey.allowedModels = allowedModels;
   }
 
   db.data.apiKeys.push(apiKey);
@@ -738,6 +743,14 @@ export async function updateApiKey(id, data) {
       daily: data.limits.daily ?? existingLimits.daily ?? null,
       weekly: data.limits.weekly ?? existingLimits.weekly ?? null,
     };
+  }
+
+  // Handle allowedModels
+  if (data.allowedModels !== undefined) {
+    // null or empty array = clear restrictions (allow all)
+    if (!data.allowedModels || (Array.isArray(data.allowedModels) && data.allowedModels.length === 0)) {
+      data.allowedModels = null;
+    }
   }
 
   db.data.apiKeys[index] = {
