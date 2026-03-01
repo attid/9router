@@ -17,7 +17,7 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { name, limits } = body;
+    const { name, limits, allowedModels } = body;
 
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -35,8 +35,18 @@ export async function POST(request) {
       }
     }
 
+    // Validate allowedModels if provided
+    if (allowedModels !== undefined && allowedModels !== null) {
+      if (!Array.isArray(allowedModels)) {
+        return NextResponse.json({ error: "allowedModels must be an array" }, { status: 400 });
+      }
+      if (allowedModels.some(m => typeof m !== "string" || !m.trim())) {
+        return NextResponse.json({ error: "allowedModels must contain non-empty strings" }, { status: 400 });
+      }
+    }
+
     const machineId = await getConsistentMachineId();
-    const apiKey = await createApiKey(name, machineId, limits || null);
+    const apiKey = await createApiKey(name, machineId, limits || null, allowedModels || null);
 
     return NextResponse.json({
       key: apiKey.key,
@@ -44,6 +54,7 @@ export async function POST(request) {
       id: apiKey.id,
       machineId: apiKey.machineId,
       limits: apiKey.limits || null,
+      allowedModels: apiKey.allowedModels || null,
     }, { status: 201 });
   } catch (error) {
     console.log("Error creating key:", error);
