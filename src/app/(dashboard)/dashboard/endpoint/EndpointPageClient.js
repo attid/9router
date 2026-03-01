@@ -26,6 +26,7 @@ export default function APIPageClient({ machineId }) {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyModels, setNewKeyModels] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
@@ -64,6 +65,8 @@ export default function APIPageClient({ machineId }) {
 
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
+  const [editingModels, setEditingModels] = useState(null);
+  const [editModelsValue, setEditModelsValue] = useState("");
 
   const { copied, copy } = useCopyToClipboard();
 
@@ -574,11 +577,18 @@ export default function APIPageClient({ machineId }) {
   const handleCreateKey = async () => {
     if (!newKeyName.trim()) return;
 
+    // Parse allowedModels from comma-separated string
+    const allowedModels = newKeyModels.trim()
+      ? newKeyModels.split(",").map(m => m.trim()).filter(Boolean)
+      : null;
     try {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({
+          name: newKeyName,
+          ...(allowedModels ? { allowedModels } : {}),
+        }),
       });
       const data = await res.json();
 
@@ -586,6 +596,7 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewKeyModels("");
         setShowAddModal(false);
       }
     } catch (error) {
@@ -627,6 +638,24 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const handleSaveModels = async (keyId) => {
+    const allowedModels = editModelsValue.trim()
+      ? editModelsValue.split(",").map(m => m.trim()).filter(Boolean)
+      : null;
+    try {
+      const res = await fetch(`/api/keys/${keyId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowedModels }),
+      });
+      if (res.ok) {
+        await fetchData();
+        setEditingModels(null);
+      }
+    } catch (error) {
+      console.log("Error saving models:", error);
+    }
+  };
   const maskKey = (fullKey) => {
     if (!fullKey) return "";
     return fullKey.length > 8 ? fullKey.slice(0, 8) + "..." : fullKey;
@@ -989,8 +1018,55 @@ export default function APIPageClient({ machineId }) {
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
+<<<<<<< HEAD
                 </div>
                 <div className="flex items-center gap-2">
+=======
+                  {/* Allowed models */}
+                  {key.allowedModels && key.allowedModels.length > 0 && editingModels !== key.id && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {key.allowedModels.map((model) => (
+                        <span key={model} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary">
+                          {model}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {!key.allowedModels && editingModels !== key.id && (
+                    <p className="mt-1 text-xs text-text-muted">All models allowed</p>
+                  )}
+                  {/* Edit models inline */}
+                  {editingModels === key.id && (
+                    <div className="mt-2 flex flex-col gap-2 p-2 rounded bg-black/[0.02] dark:bg-white/[0.02]">
+                      <p className="text-xs font-medium">Allowed Models</p>
+                      <Input
+                        size="sm"
+                        value={editModelsValue}
+                        onChange={(e) => setEditModelsValue(e.target.value)}
+                        placeholder="cc/claude-sonnet-4-20250514, glm/glm-4.7 (empty = all)"
+                      />
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={() => handleSaveModels(key.id)}>Save</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingModels(null)}>Cancel</Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      if (editingModels === key.id) {
+                        setEditingModels(null);
+                      } else {
+                        setEditModelsValue(key.allowedModels?.join(", ") || "");
+                        setEditingModels(key.id);
+                      }
+                    }}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-0 group-hover:opacity-100 transition-all"
+                    title="Edit allowed models"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">model_training</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1025,6 +1101,7 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewKeyModels("");
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1034,6 +1111,17 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+          <div className="border-t border-border pt-3">
+            <p className="text-sm font-medium mb-2">Allowed Models <span className="text-text-muted font-normal">(optional)</span></p>
+            <Input
+              value={newKeyModels}
+              onChange={(e) => setNewKeyModels(e.target.value)}
+              placeholder="cc/claude-sonnet-4-20250514, glm/glm-4.7"
+            />
+            <p className="text-xs text-text-muted mt-1">
+              Comma-separated list of model names. Leave empty to allow all models.
+            </p>
+          </div>
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
@@ -1042,6 +1130,7 @@ export default function APIPageClient({ machineId }) {
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+                setNewKeyModels("");
               }}
               variant="ghost"
               fullWidth
