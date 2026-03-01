@@ -77,6 +77,7 @@ export async function handleChat(request, env, ctx, machineIdOverride = null) {
     return handleComboChat({
       body,
       models: comboModels,
+      comboName: modelStr,
       handleSingleModel: (reqBody, model) => handleSingleModelChat(reqBody, model, machineId, env),
       log
     });
