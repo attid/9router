@@ -34,7 +34,8 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
   let lastError = null;
 
   for (let i = 0; i < models.length; i++) {
-    const modelStr = models[i];
+    const entry = models[i];
+    const modelStr = typeof entry === "string" ? entry : entry.model;
     log.info("COMBO", `Trying model ${i + 1}/${models.length}: ${modelStr}`);
 
     const result = await handleSingleModel(body, modelStr);

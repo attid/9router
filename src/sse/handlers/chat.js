@@ -148,7 +148,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: comboModels,
         comboName: modelStr,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, forceSourceFormat),
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
         log
       });
     }
