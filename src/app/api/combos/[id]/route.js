@@ -40,6 +40,21 @@ export async function PUT(request, { params }) {
         return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
       }
     }
+    // Validate models if provided
+    if (body.models && Array.isArray(body.models)) {
+      for (const entry of body.models) {
+        if (typeof entry === "object" && entry !== null) {
+          if (!entry.model || typeof entry.model !== "string") {
+            return NextResponse.json({ error: "Each model object must have a 'model' string field" }, { status: 400 });
+          }
+          if (entry.weight !== undefined && (!Number.isInteger(entry.weight) || entry.weight < 0)) {
+            return NextResponse.json({ error: "Model weight must be a non-negative integer" }, { status: 400 });
+          }
+        } else if (typeof entry !== "string") {
+          return NextResponse.json({ error: "Models must be strings or {model, weight} objects" }, { status: 400 });
+        }
+      }
+    }
     
     // Capture previous name to invalidate rotation state on rename
     const prev = await getComboById(id);
