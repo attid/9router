@@ -81,7 +81,6 @@ export default function APIPageClient({ machineId }) {
   useEffect(() => {
     if (tsLogRef.current) tsLogRef.current.scrollTop = tsLogRef.current.scrollHeight;
   }, [tsInstallLog]);
-
   const loadModelSelectData = async () => {
     try {
       const [providersRes, aliasesRes] = await Promise.all([
@@ -104,9 +103,9 @@ export default function APIPageClient({ machineId }) {
   useEffect(() => {
     fetchData();
     loadSettings();
+    loadModelSelectData();
     // Poll status periodically + on tab visible to sync after watchdog restarts
     const interval = setInterval(() => { syncTunnelStatus(); }, STATUS_POLL_INTERVAL_MS);
-    loadModelSelectData();
     const onVisible = () => { if (!document.hidden) syncTunnelStatus(); };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
