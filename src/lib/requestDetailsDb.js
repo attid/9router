@@ -182,8 +182,6 @@ export async function getRequestDetailsDb() {
         ON request_details(connection_id);
       CREATE INDEX IF NOT EXISTS idx_status
         ON request_details(status);
-      CREATE INDEX IF NOT EXISTS idx_api_key_id
-        ON request_details(api_key_id);
     `);
 
     // Migration: add api_key_id column if missing (existing databases)
@@ -193,6 +191,8 @@ export async function getRequestDetailsDb() {
         db.exec('ALTER TABLE request_details ADD COLUMN api_key_id TEXT');
       }
     } catch { /* column already exists */ }
+
+    db.exec('CREATE INDEX IF NOT EXISTS idx_api_key_id ON request_details(api_key_id)');
 
     dbInstance = db;
 
