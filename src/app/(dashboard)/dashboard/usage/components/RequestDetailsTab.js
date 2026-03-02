@@ -10,6 +10,7 @@ import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
 
 let providerNameCache = null;
 let providerNodesCache = null;
+let apiKeyNameCache = null;
 
 async function fetchProviderNames() {
   if (providerNameCache && providerNodesCache) {
@@ -31,6 +32,27 @@ async function fetchProviderNames() {
   };
 
   return { providerNameCache, providerNodesCache };
+}
+
+async function fetchApiKeyNames() {
+  if (apiKeyNameCache) return apiKeyNameCache;
+  try {
+    const res = await fetch("/api/keys");
+    const data = await res.json();
+    const keys = data.keys || [];
+    apiKeyNameCache = {};
+    for (const k of keys) {
+      if (k.key) apiKeyNameCache[k.key] = k.name || k.key;
+    }
+    return apiKeyNameCache;
+  } catch {
+    return {};
+  }
+}
+
+function getApiKeyName(apiKeyId, keyNameMap) {
+  if (!apiKeyId || !keyNameMap) return null;
+  return keyNameMap[apiKeyId] || null;
 }
 
 function getProviderName(providerId, cache) {
@@ -95,6 +117,7 @@ export default function RequestDetailsTab() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [providers, setProviders] = useState([]);
   const [providerNameCache, setProviderNameCache] = useState(null);
+  const [keyNameMap, setKeyNameMap] = useState(null);
   const [filters, setFilters] = useState({
     provider: "",
     startDate: "",
@@ -109,6 +132,9 @@ export default function RequestDetailsTab() {
 
       const cache = await fetchProviderNames();
       setProviderNameCache(cache.providerNameCache);
+
+      const keyNames = await fetchApiKeyNames();
+      setKeyNameMap(keyNames);
     } catch (error) {
       console.error("Failed to fetch providers:", error);
     }
@@ -267,8 +293,11 @@ export default function RequestDetailsTab() {
                     <td className="p-4 text-sm text-text-main">
                       {new Date(detail.timestamp).toLocaleString()}
                     </td>
-                    <td className="p-4 text-sm text-text-main font-mono">
-                      {detail.model}
+                    <td className="p-4 text-sm text-text-main">
+                      <div className="font-mono">{detail.model}</div>
+                      {getApiKeyName(detail.apiKeyId, keyNameMap) && (
+                        <div className="text-xs text-text-muted">{getApiKeyName(detail.apiKeyId, keyNameMap)}</div>
+                      )}
                     </td>
                     <td className="p-4 text-sm text-text-main">
                        <span className="font-medium">
@@ -337,6 +366,12 @@ export default function RequestDetailsTab() {
                  <span className="text-text-muted">Provider:</span>{" "}
                  <span className="text-text-main font-medium">{getProviderName(selectedDetail.provider, providerNameCache)}</span>
                </div>
+              <div>
+                <span className="text-text-muted">API Key:</span>{" "}
+                <span className="text-text-main font-medium">
+                  {getApiKeyName(selectedDetail.apiKeyId, keyNameMap) || <span className="text-text-muted italic">unknown</span>}
+                </span>
+              </div>
               <div>
                 <span className="text-text-muted">Model:</span>{" "}
                 <span className="text-text-main font-mono">{selectedDetail.model}</span>

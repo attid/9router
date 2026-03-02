@@ -167,7 +167,8 @@ export async function getRequestDetailsDb() {
         request TEXT,
         provider_request TEXT,
         provider_response TEXT,
-        response TEXT
+        response TEXT,
+        api_key_id TEXT
       );
 
       -- Indexes for common queries
@@ -181,7 +182,17 @@ export async function getRequestDetailsDb() {
         ON request_details(connection_id);
       CREATE INDEX IF NOT EXISTS idx_status
         ON request_details(status);
+      CREATE INDEX IF NOT EXISTS idx_api_key_id
+        ON request_details(api_key_id);
     `);
+
+    // Migration: add api_key_id column if missing (existing databases)
+    try {
+      const columns = db.pragma('table_info(request_details)');
+      if (!columns.some(c => c.name === 'api_key_id')) {
+        db.exec('ALTER TABLE request_details ADD COLUMN api_key_id TEXT');
+      }
+    } catch { /* column already exists */ }
 
     dbInstance = db;
 
@@ -230,8 +241,8 @@ async function flushToDatabase() {
     const insertStmt = db.prepare(`
       INSERT OR REPLACE INTO request_details
       (id, provider, model, connection_id, timestamp, status, latency, tokens,
-       request, provider_request, provider_response, response)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       request, provider_request, provider_response, response, api_key_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const deleteStmt = db.prepare(`
@@ -273,7 +284,8 @@ async function flushToDatabase() {
           safeJsonStringify(item.request || {}, maxJsonSize),
           safeJsonStringify(item.providerRequest || {}, maxJsonSize),
           safeJsonStringify(item.providerResponse || {}, maxJsonSize),
-          safeJsonStringify(item.response || {}, maxJsonSize)
+          safeJsonStringify(item.response || {}, maxJsonSize),
+          item.apiKeyId || null
         );
       }
 
@@ -478,7 +490,8 @@ export async function getRequestDetails(filter = {}) {
     request: safeJsonParse(row.request),
     providerRequest: safeJsonParse(row.provider_request),
     providerResponse: safeJsonParse(row.provider_response),
-    response: safeJsonParse(row.response)
+    response: safeJsonParse(row.response),
+    apiKeyId: row.api_key_id || null
   }));
 
   return {
@@ -526,6 +539,7 @@ export async function getRequestDetailById(id) {
     request: safeJsonParse(row.request),
     providerRequest: safeJsonParse(row.provider_request),
     providerResponse: safeJsonParse(row.provider_response),
-    response: safeJsonParse(row.response)
+    response: safeJsonParse(row.response),
+    apiKeyId: row.api_key_id || null
   };
 }
