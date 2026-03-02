@@ -45,20 +45,6 @@ export function handleStreamingResponse({ providerResponse, provider, model, sou
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey });
   const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController);
 
-  const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
-  saveRequestDetail(buildRequestDetail({
-    provider, model, connectionId, apiKeyId: apiKey,
-    latency: { ttft: 0, total: Date.now() - requestStartTime },
-    tokens: { prompt_tokens: 0, completion_tokens: 0 },
-    request: extractRequestConfig(body, stream),
-    providerRequest: finalBody || translatedBody || null,
-    providerResponse: "[Streaming - raw response not captured]",
-    response: { content: "[Streaming in progress...]", thinking: null, type: "streaming" },
-    status: "success"
-  }, { id: streamDetailId })).catch(err => {
-    console.error("[RequestDetail] Failed to save streaming request:", err.message);
-  });
-
   return {
     success: true,
     response: new Response(transformedBody, { headers: SSE_HEADERS })
