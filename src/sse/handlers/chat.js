@@ -125,6 +125,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: comboModels,
       comboName: modelStr,
+      apiKey,
       handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
       log
     });
@@ -149,6 +150,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: comboModels,
         comboName: modelStr,
+        apiKey,
         handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
         log
       });

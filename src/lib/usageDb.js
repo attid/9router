@@ -300,7 +300,11 @@ export async function getUsageByApiKey(apiKey, since) {
   for (const entry of history) {
     if (entry.apiKey !== apiKey) continue;
     if (new Date(entry.timestamp).getTime() < sinceMs) continue;
-    total += (entry.tokens?.prompt_tokens || entry.tokens?.input_tokens || 0) + (entry.tokens?.completion_tokens || entry.tokens?.output_tokens || 0);
+    const input = entry.tokens?.prompt_tokens || entry.tokens?.input_tokens || 0;
+    const output = entry.tokens?.completion_tokens || entry.tokens?.output_tokens || 0;
+    const cacheRead = entry.tokens?.cache_read_input_tokens || entry.tokens?.cached_tokens || 0;
+    const cacheCreation = entry.tokens?.cache_creation_input_tokens || 0;
+    total += input + cacheRead + cacheCreation + output;
   }
   return total;
 }
@@ -342,7 +346,10 @@ export async function appendRequestLog({ model, provider, connectionId, tokens, 
       }
     } catch {}
 
-    const sent = tokens?.prompt_tokens !== undefined ? tokens.prompt_tokens : "-";
+    const rawPrompt = tokens?.prompt_tokens !== undefined ? tokens.prompt_tokens : "-";
+    const cacheR = tokens?.cache_read_input_tokens || tokens?.cached_tokens || 0;
+    const cacheC = tokens?.cache_creation_input_tokens || 0;
+    const sent = cacheR || cacheC ? `${rawPrompt}(cr${cacheR}+cc${cacheC})` : rawPrompt;
     const received = tokens?.completion_tokens !== undefined ? tokens.completion_tokens : "-";
 
     const line = `${timestamp} | ${m} | ${p} | ${account} | ${sent} | ${received} | ${status}\n`;
@@ -533,6 +540,8 @@ export async function getUsageStats() {
     totalRequests: history.length,
     totalPromptTokens: 0,
     totalCompletionTokens: 0,
+    totalCacheReadTokens: 0,
+    totalCacheCreationTokens: 0,
     totalCost: 0,
     byProvider: {},
     byModel: {},
@@ -587,8 +596,12 @@ export async function getUsageStats() {
   }
 
   for (const entry of history) {
-    const promptTokens = entry.tokens?.prompt_tokens || 0;
+    const rawPrompt = entry.tokens?.prompt_tokens || 0;
     const completionTokens = entry.tokens?.completion_tokens || 0;
+    const cacheRead = entry.tokens?.cache_read_input_tokens || entry.tokens?.cached_tokens || 0;
+    const cacheCreation = entry.tokens?.cache_creation_input_tokens || 0;
+    // Total input = raw prompt + cache tokens (for Claude, raw prompt is non-cached only)
+    const promptTokens = rawPrompt + cacheRead + cacheCreation;
     const entryTime = new Date(entry.timestamp);
 
     // Calculate cost for this entry
@@ -596,6 +609,8 @@ export async function getUsageStats() {
 
     stats.totalPromptTokens += promptTokens;
     stats.totalCompletionTokens += completionTokens;
+    stats.totalCacheReadTokens += cacheRead;
+    stats.totalCacheCreationTokens += cacheCreation;
     stats.totalCost += entryCost;
 
     // Last 10 minutes aggregation - floor entry time to its minute
@@ -615,12 +630,16 @@ export async function getUsageStats() {
         requests: 0,
         promptTokens: 0,
         completionTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
         cost: 0
       };
     }
     stats.byProvider[entry.provider].requests++;
     stats.byProvider[entry.provider].promptTokens += promptTokens;
     stats.byProvider[entry.provider].completionTokens += completionTokens;
+    stats.byProvider[entry.provider].cacheReadTokens += cacheRead;
+    stats.byProvider[entry.provider].cacheCreationTokens += cacheCreation;
     stats.byProvider[entry.provider].cost += entryCost;
 
     // By Model
@@ -634,6 +653,8 @@ export async function getUsageStats() {
         requests: 0,
         promptTokens: 0,
         completionTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
         cost: 0,
         rawModel: entry.model,
         provider: providerDisplayName,
@@ -643,6 +664,8 @@ export async function getUsageStats() {
     stats.byModel[modelKey].requests++;
     stats.byModel[modelKey].promptTokens += promptTokens;
     stats.byModel[modelKey].completionTokens += completionTokens;
+    stats.byModel[modelKey].cacheReadTokens += cacheRead;
+    stats.byModel[modelKey].cacheCreationTokens += cacheCreation;
     stats.byModel[modelKey].cost += entryCost;
     if (new Date(entry.timestamp) > new Date(stats.byModel[modelKey].lastUsed)) {
       stats.byModel[modelKey].lastUsed = entry.timestamp;
@@ -659,6 +682,8 @@ export async function getUsageStats() {
           requests: 0,
           promptTokens: 0,
           completionTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
           cost: 0,
           rawModel: entry.model,
           provider: providerDisplayName,
@@ -670,6 +695,8 @@ export async function getUsageStats() {
       stats.byAccount[accountKey].requests++;
       stats.byAccount[accountKey].promptTokens += promptTokens;
       stats.byAccount[accountKey].completionTokens += completionTokens;
+      stats.byAccount[accountKey].cacheReadTokens += cacheRead;
+      stats.byAccount[accountKey].cacheCreationTokens += cacheCreation;
       stats.byAccount[accountKey].cost += entryCost;
       if (new Date(entry.timestamp) > new Date(stats.byAccount[accountKey].lastUsed)) {
         stats.byAccount[accountKey].lastUsed = entry.timestamp;
@@ -690,6 +717,8 @@ export async function getUsageStats() {
           requests: 0,
           promptTokens: 0,
           completionTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
           cost: 0,
           rawModel: entry.model,
           provider: providerDisplayName,
@@ -703,6 +732,8 @@ export async function getUsageStats() {
       apiKeyEntry.requests++;
       apiKeyEntry.promptTokens += promptTokens;
       apiKeyEntry.completionTokens += completionTokens;
+      apiKeyEntry.cacheReadTokens += cacheRead;
+      apiKeyEntry.cacheCreationTokens += cacheCreation;
       apiKeyEntry.cost += entryCost;
       if (new Date(entry.timestamp) > new Date(apiKeyEntry.lastUsed)) {
         apiKeyEntry.lastUsed = entry.timestamp;
@@ -716,6 +747,8 @@ export async function getUsageStats() {
           requests: 0,
           promptTokens: 0,
           completionTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
           cost: 0,
           rawModel: entry.model,
           provider: providerDisplayName,
@@ -729,6 +762,8 @@ export async function getUsageStats() {
       apiKeyEntry.requests++;
       apiKeyEntry.promptTokens += promptTokens;
       apiKeyEntry.completionTokens += completionTokens;
+      apiKeyEntry.cacheReadTokens += cacheRead;
+      apiKeyEntry.cacheCreationTokens += cacheCreation;
       apiKeyEntry.cost += entryCost;
       if (new Date(entry.timestamp) > new Date(apiKeyEntry.lastUsed)) {
         apiKeyEntry.lastUsed = entry.timestamp;
@@ -744,6 +779,8 @@ export async function getUsageStats() {
         requests: 0,
         promptTokens: 0,
         completionTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
         cost: 0,
         endpoint: endpoint,
         rawModel: entry.model,
@@ -755,6 +792,8 @@ export async function getUsageStats() {
     endpointEntry.requests++;
     endpointEntry.promptTokens += promptTokens;
     endpointEntry.completionTokens += completionTokens;
+    endpointEntry.cacheReadTokens += cacheRead;
+    endpointEntry.cacheCreationTokens += cacheCreation;
     endpointEntry.cost += entryCost;
     if (new Date(entry.timestamp) > new Date(endpointEntry.lastUsed)) {
       endpointEntry.lastUsed = entry.timestamp;
@@ -803,9 +842,11 @@ export async function getChartData(period = "7d") {
     const entryTime = new Date(entry.timestamp).getTime();
     if (entryTime < startTime || entryTime > now) continue;
     const idx = Math.min(Math.floor((entryTime - startTime) / bucketMs), bucketCount - 1);
-    const promptTokens = entry.tokens?.prompt_tokens || 0;
+    const rawPrompt = entry.tokens?.prompt_tokens || 0;
     const completionTokens = entry.tokens?.completion_tokens || 0;
-    buckets[idx].tokens += promptTokens + completionTokens;
+    const cacheRead = entry.tokens?.cache_read_input_tokens || entry.tokens?.cached_tokens || 0;
+    const cacheCreation = entry.tokens?.cache_creation_input_tokens || 0;
+    buckets[idx].tokens += rawPrompt + cacheRead + cacheCreation + completionTokens;
     // Use pre-stored cost if available, else 0
     buckets[idx].cost += entry.cost || 0;
   }

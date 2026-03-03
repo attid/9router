@@ -33,10 +33,16 @@ SortIcon.propTypes = {
  */
 function ValueCells({ item, viewMode, isSummary = false }) {
   if (viewMode === "tokens") {
+    const hasCache = (item.cacheReadTokens > 0 || item.cacheCreationTokens > 0);
     return (
       <>
         <td className="px-6 py-3 text-right text-text-muted">
-          {isSummary && item.promptTokens === undefined ? "—" : fmt(item.promptTokens)}
+          <div>{isSummary && item.promptTokens === undefined ? "—" : fmt(item.promptTokens)}</div>
+          {hasCache && (
+            <div className="text-[10px] text-text-muted/70">
+              {fmt(item.cacheReadTokens)} read / {fmt(item.cacheCreationTokens)} write
+            </div>
+          )}
         </td>
         <td className="px-6 py-3 text-right text-text-muted">
           {isSummary && item.completionTokens === undefined ? "—" : fmt(item.completionTokens)}

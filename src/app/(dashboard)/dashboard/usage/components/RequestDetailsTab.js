@@ -262,7 +262,7 @@ export default function RequestDetailsTab() {
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Timestamp</th>
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Model</th>
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Provider</th>
-                <th className="text-right p-4 text-sm font-semibold text-text-main">Input Tokens</th>
+                <th className="text-right p-4 text-sm font-semibold text-text-main" title="paid / cached">Input Tokens</th>
                 <th className="text-right p-4 text-sm font-semibold text-text-main">Output Tokens</th>
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Latency</th>
                 <th className="text-center p-4 text-sm font-semibold text-text-main">Action</th>
@@ -305,7 +305,17 @@ export default function RequestDetailsTab() {
                        </span>
                      </td>
                     <td className="p-4 text-sm text-text-main text-right font-mono">
-                      {detail.tokens?.prompt_tokens?.toLocaleString() || 0}
+                      {(() => {
+                        const t = detail.tokens || {};
+                        const prompt = t.prompt_tokens || 0;
+                        const cacheRead = t.cache_read_input_tokens || t.cached_tokens || 0;
+                        const cacheCreation = t.cache_creation_input_tokens || 0;
+                        const paid = prompt + cacheCreation;
+                        if (cacheRead > 0 || cacheCreation > 0) {
+                          return <>{paid.toLocaleString()} <span className="text-text-muted">/ {cacheRead.toLocaleString()}</span></>;
+                        }
+                        return prompt.toLocaleString();
+                      })()}
                     </td>
                     <td className="p-4 text-sm text-text-main text-right font-mono">
                       {detail.tokens?.completion_tokens?.toLocaleString() || 0}
@@ -394,7 +404,13 @@ export default function RequestDetailsTab() {
               <div>
                 <span className="text-text-muted">Input Tokens:</span>{" "}
                 <span className="text-text-main font-mono">
-                  {selectedDetail.tokens?.prompt_tokens?.toLocaleString() || 0}
+                  {(() => {
+                    const t = selectedDetail.tokens || {};
+                    const prompt = t.prompt_tokens || 0;
+                    const cacheRead = t.cache_read_input_tokens || t.cached_tokens || 0;
+                    const cacheCreation = t.cache_creation_input_tokens || 0;
+                    return (prompt + cacheRead + cacheCreation).toLocaleString();
+                  })()}
                 </span>
               </div>
               <div>
@@ -403,6 +419,28 @@ export default function RequestDetailsTab() {
                   {selectedDetail.tokens?.completion_tokens?.toLocaleString() || 0}
                 </span>
               </div>
+              {(() => {
+                const t = selectedDetail.tokens || {};
+                const cacheRead = t.cache_read_input_tokens || t.cached_tokens || 0;
+                const cacheCreation = t.cache_creation_input_tokens || 0;
+                if (!cacheRead && !cacheCreation) return null;
+                return (
+                  <>
+                    <div>
+                      <span className="text-text-muted">Non-cached:</span>{" "}
+                      <span className="text-text-main font-mono">{(t.prompt_tokens || 0).toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-text-muted">Cache Read:</span>{" "}
+                      <span className="text-text-main font-mono">{cacheRead.toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-text-muted">Cache Creation:</span>{" "}
+                      <span className="text-text-main font-mono">{cacheCreation.toLocaleString()}</span>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
             
             <div className="space-y-4">

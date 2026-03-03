@@ -8,6 +8,10 @@ import { unavailableResponse } from "../utils/error.js";
 // In-memory round-robin counters: comboName → index
 const rrCounters = new Map();
 
+// Sticky routing: `${comboName}|${apiKey}` → { model, assignedAt, cycleIndex }
+const stickyMap = new Map();
+const STICKY_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 /**
  * Build weighted cycle array from models with weight > 0.
  * E.g. [{model:"A", weight:2}, {model:"B", weight:1}] → ["A", "A", "B"]
@@ -30,6 +34,34 @@ export function pickNextModel(comboName, cycle, counters = rrCounters) {
   const model = cycle[idx % cycle.length];
   counters.set(comboName, idx + 1);
   return model;
+}
+
+/**
+ * Pick a model with per-apiKey sticky routing (5-min window).
+ * Returns the same model for the same apiKey within the TTL.
+ * Falls back to round-robin when no apiKey or TTL expired.
+ */
+export function pickStickyModel(comboName, cycle, apiKey) {
+  if (!apiKey) return pickNextModel(comboName, cycle);
+
+  const stickyKey = `${comboName}|${apiKey}`;
+  const entry = stickyMap.get(stickyKey);
+  const now = Date.now();
+
+  if (entry && (now - entry.assignedAt) < STICKY_TTL_MS && cycle.includes(entry.model)) {
+    return entry.model;
+  }
+
+  const model = pickNextModel(comboName, cycle);
+  stickyMap.set(stickyKey, { model, assignedAt: now });
+  return model;
+}
+
+/**
+ * Clear sticky entry for a specific combo+apiKey (on fallback).
+ */
+export function clearSticky(comboName, apiKey) {
+  if (apiKey) stickyMap.delete(`${comboName}|${apiKey}`);
 }
 
 /**
@@ -57,10 +89,11 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {Object} options.body - Request body
  * @param {{model: string, weight: number}[]} options.models - Array of model objects
  * @param {string} [options.comboName] - Combo name (for round-robin counter)
+ * @param {string} [options.apiKey] - API key for sticky routing
  * @param {Function} options.handleSingleModel - (body, modelStr) => Promise<Response>
  * @param {Object} options.log - Logger
  */
-export async function handleComboChat({ body, models, comboName, handleSingleModel, log }) {
+export async function handleComboChat({ body, models, comboName, apiKey, handleSingleModel, log }) {
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
@@ -75,7 +108,7 @@ export async function handleComboChat({ body, models, comboName, handleSingleMod
   if (balancePool.length > 0 && comboName) {
     const cycle = buildWeightedCycle(balancePool);
     if (cycle.length > 0) {
-      const picked = pickNextModel(comboName, cycle);
+      const picked = apiKey ? pickStickyModel(comboName, cycle, apiKey) : pickNextModel(comboName, cycle);
       // Start with picked, then other pool models, then fallback
       tryList.push(picked);
       for (const m of balancePool) {
@@ -137,10 +170,13 @@ export async function handleComboChat({ body, models, comboName, handleSingleMod
 
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
+      // Clear sticky so next request picks a different model
+      if (comboName && apiKey) clearSticky(comboName, apiKey);
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
+      if (comboName && apiKey) clearSticky(comboName, apiKey);
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
   }

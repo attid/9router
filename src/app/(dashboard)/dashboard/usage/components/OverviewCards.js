@@ -16,6 +16,11 @@ export default function OverviewCards({ stats }) {
       <Card className="px-4 py-3 flex flex-col gap-1">
         <span className="text-text-muted text-sm uppercase font-semibold">Total Input Tokens</span>
         <span className="text-2xl font-bold text-primary">{fmt(stats.totalPromptTokens)}</span>
+        {(stats.totalCacheReadTokens > 0 || stats.totalCacheCreationTokens > 0) && (
+          <span className="text-[10px] text-text-muted">
+            cached: {fmt(stats.totalCacheReadTokens)} read, {fmt(stats.totalCacheCreationTokens)} write
+          </span>
+        )}
       </Card>
       <Card className="px-4 py-3 flex flex-col gap-1">
         <span className="text-text-muted text-sm uppercase font-semibold">Output Tokens</span>

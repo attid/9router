@@ -21,8 +21,11 @@ function getWeekStart(date = new Date()) {
 }
 
 function extractTokens(entry) {
-  return (entry.tokens?.prompt_tokens || entry.tokens?.input_tokens || 0)
-       + (entry.tokens?.completion_tokens || entry.tokens?.output_tokens || 0);
+  const input = entry.tokens?.prompt_tokens || entry.tokens?.input_tokens || 0;
+  const output = entry.tokens?.completion_tokens || entry.tokens?.output_tokens || 0;
+  const cacheRead = entry.tokens?.cache_read_input_tokens || entry.tokens?.cached_tokens || 0;
+  const cacheCreation = entry.tokens?.cache_creation_input_tokens || 0;
+  return input + cacheRead + cacheCreation + output;
 }
 
 // --- In-memory counters ---

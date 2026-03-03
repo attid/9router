@@ -103,7 +103,7 @@ function groupDataByKey(data, keyField) {
     if (!groups[gk]) {
       groups[gk] = {
         groupKey: gk,
-        summary: { requests: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, inputCost: 0, outputCost: 0, lastUsed: null, pending: 0 },
+        summary: { requests: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, cost: 0, inputCost: 0, outputCost: 0, lastUsed: null, pending: 0 },
         items: [],
       };
     }
@@ -112,6 +112,8 @@ function groupDataByKey(data, keyField) {
     s.promptTokens += item.promptTokens || 0;
     s.completionTokens += item.completionTokens || 0;
     s.totalTokens += item.totalTokens || 0;
+    s.cacheReadTokens += item.cacheReadTokens || 0;
+    s.cacheCreationTokens += item.cacheCreationTokens || 0;
     s.cost += item.cost || 0;
     s.inputCost += item.inputCost || 0;
     s.outputCost += item.outputCost || 0;
