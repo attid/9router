@@ -20,6 +20,7 @@ const navItems = [
 // Debug items (only show when ENABLE_REQUEST_LOGS=true)
 const debugItems = [
   // { href: "/dashboard/translator", label: "Translator", icon: "translate" },
+  { href: "/dashboard/chat-test", label: "Chat Test", icon: "chat" },
   { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
 ];
 
