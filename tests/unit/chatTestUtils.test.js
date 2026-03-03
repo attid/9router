@@ -3,6 +3,7 @@ import {
   buildRequestPayload,
   extractAssistantText,
   fileToDataUrl,
+  maskApiKey,
 } from "../../src/app/(dashboard)/dashboard/chat-test/chatTestUtils.js";
 
 describe("chatTestUtils.buildRequestPayload", () => {
@@ -132,5 +133,20 @@ describe("chatTestUtils.fileToDataUrl", () => {
     const tooBig = new File([new Uint8Array(6 * 1024 * 1024)], "big.png", { type: "image/png" });
 
     await expect(fileToDataUrl(tooBig, 5 * 1024 * 1024)).rejects.toThrow(/Image is too large/i);
+  });
+});
+
+describe("chatTestUtils.maskApiKey", () => {
+  it("masks long key keeping first 3 and last 4 chars", () => {
+    expect(maskApiKey("sk-1234567890abcdef")).toBe("sk-...cdef");
+  });
+
+  it("returns fallback for empty value", () => {
+    expect(maskApiKey("")).toBe("(empty)");
+    expect(maskApiKey(null)).toBe("(empty)");
+  });
+
+  it("masks short keys without breaking", () => {
+    expect(maskApiKey("abcd")).toBe("ab...cd");
   });
 });

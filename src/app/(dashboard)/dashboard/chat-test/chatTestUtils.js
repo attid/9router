@@ -79,3 +79,13 @@ export async function fileToDataUrl(file, maxSizeBytes = MAX_IMAGE_SIZE_BYTES) {
     reader.readAsDataURL(file);
   });
 }
+
+export function maskApiKey(value) {
+  const raw = String(value || "");
+  if (!raw) return "(empty)";
+  if (raw.length <= 4) {
+    const keep = Math.max(1, Math.floor(raw.length / 2));
+    return `${raw.slice(0, keep)}...${raw.slice(-keep)}`;
+  }
+  return `${raw.slice(0, 3)}...${raw.slice(-4)}`;
+}

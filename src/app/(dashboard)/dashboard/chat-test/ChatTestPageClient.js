@@ -1,19 +1,25 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Button, Card, Input } from "@/shared/components";
+import { Button, Card, Input, Select } from "@/shared/components";
 import ModelSelectModal from "@/shared/components/ModelSelectModal";
 import {
   buildRequestPayload,
   extractAssistantText,
   fileToDataUrl,
   MAX_IMAGE_SIZE_BYTES,
+  maskApiKey,
 } from "./chatTestUtils.js";
+
+const KEY_STORAGE = "chatTest.selectedKeyId";
 
 export default function ChatTestPageClient() {
   const [apiMode, setApiMode] = useState("chat");
   const [model, setModel] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [requireApiKey, setRequireApiKey] = useState(false);
+  const [apiKeys, setApiKeys] = useState([]);
+  const [selectedKeyId, setSelectedKeyId] = useState("");
 
   const [imageDataUrl, setImageDataUrl] = useState(null);
   const [imageName, setImageName] = useState("");
@@ -27,13 +33,33 @@ export default function ChatTestPageClient() {
   const [error, setError] = useState("");
 
   const imageLimitLabel = useMemo(() => `${Math.round(MAX_IMAGE_SIZE_BYTES / (1024 * 1024))}MB`, []);
+  const activeApiKeys = useMemo(
+    () => (apiKeys || []).filter((key) => key?.isActive !== false),
+    [apiKeys]
+  );
+  const keyOptions = useMemo(() => {
+    const options = activeApiKeys.map((key) => ({
+      value: key.id,
+      label: `${key.name} (${maskApiKey(key.key)})`,
+    }));
+    if (!requireApiKey) {
+      options.unshift({ value: "__none__", label: "No API key" });
+    }
+    return options;
+  }, [activeApiKeys, requireApiKey]);
+  const selectedKey = useMemo(
+    () => activeApiKeys.find((key) => key.id === selectedKeyId) || null,
+    [activeApiKeys, selectedKeyId]
+  );
 
   useEffect(() => {
-    const loadModelSelectData = async () => {
+    const loadInitialData = async () => {
       try {
-        const [providersRes, aliasesRes] = await Promise.all([
+        const [providersRes, aliasesRes, settingsRes, keysRes] = await Promise.all([
           fetch("/api/providers"),
           fetch("/api/models/alias"),
+          fetch("/api/settings"),
+          fetch("/api/keys"),
         ]);
 
         if (providersRes.ok) {
@@ -45,13 +71,36 @@ export default function ChatTestPageClient() {
           const aliasesData = await aliasesRes.json();
           setModelAliases(aliasesData.aliases || {});
         }
+        if (settingsRes.ok) {
+          const settingsData = await settingsRes.json();
+          setRequireApiKey(settingsData.requireApiKey === true);
+        }
+        if (keysRes.ok) {
+          const keysData = await keysRes.json();
+          const keys = keysData.keys || [];
+          setApiKeys(keys);
+
+          let savedKeyId = "";
+          if (typeof window !== "undefined") {
+            savedKeyId = window.localStorage.getItem(KEY_STORAGE) || "";
+          }
+          if (savedKeyId && keys.some((key) => key.id === savedKeyId && key.isActive !== false)) {
+            setSelectedKeyId(savedKeyId);
+          }
+        }
       } catch {
         // Keep page interactive even if data load fails
       }
     };
 
-    loadModelSelectData();
+    loadInitialData();
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (selectedKeyId) window.localStorage.setItem(KEY_STORAGE, selectedKeyId);
+    else window.localStorage.removeItem(KEY_STORAGE);
+  }, [selectedKeyId]);
 
   const handleFileChange = async (event) => {
     const file = event.target.files?.[0];
@@ -87,10 +136,21 @@ export default function ChatTestPageClient() {
     try {
       const payload = buildRequestPayload({ apiMode, model, prompt, imageDataUrl });
       const endpoint = apiMode === "responses" ? "/api/v1/responses" : "/api/v1/chat/completions";
+      if (requireApiKey && !selectedKeyId) {
+        throw new Error("Select API key");
+      }
+      if (selectedKeyId && !selectedKey) {
+        throw new Error("Selected key is no longer available");
+      }
+
+      const headers = { "Content-Type": "application/json" };
+      if (selectedKey?.key) {
+        headers.Authorization = `Bearer ${selectedKey.key}`;
+      }
 
       const res = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
@@ -115,7 +175,7 @@ export default function ChatTestPageClient() {
     }
   };
 
-  const isSendDisabled = isSending || !model || !prompt.trim();
+  const isSendDisabled = isSending || !model || !prompt.trim() || (requireApiKey && !selectedKeyId);
 
   return (
     <div className="space-y-6">
@@ -171,6 +231,25 @@ export default function ChatTestPageClient() {
               rows={4}
               placeholder="e.g. Привет, представься в 1 предложении"
               className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-primary/30"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Select
+              label="API Key"
+              options={keyOptions}
+              value={selectedKeyId || (!requireApiKey ? "__none__" : "")}
+              onChange={(e) => {
+                const value = e.target.value;
+                setSelectedKeyId(value === "__none__" ? "" : value);
+              }}
+              placeholder={activeApiKeys.length ? "Select API key" : "No active API keys"}
+              required={requireApiKey}
+              hint={
+                requireApiKey
+                  ? "Required: request auth is enabled in Settings."
+                  : "Optional: auth disabled, choose a key only if you want to test key-specific access."
+              }
             />
           </div>
 
