@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import PropTypes from "prop-types";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -9,6 +9,7 @@ import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthW
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { buildHiddenModelsMap, computeHiddenFromVisible } from "@/shared/utils/modelVisibility";
 
 export default function ProviderDetailPage() {
   const params = useParams();
@@ -27,6 +28,9 @@ export default function ProviderDetailPage() {
   const [modelTestResults, setModelTestResults] = useState({});
   const [testingModelId, setTestingModelId] = useState(null);
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
+  const [hiddenModels, setHiddenModels] = useState({});
+  const [showHiddenModels, setShowHiddenModels] = useState(false);
+  const [showManageModels, setShowManageModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
   const providerInfo = providerNode
@@ -63,6 +67,18 @@ export default function ProviderDetailPage() {
       }
     } catch (error) {
       console.log("Error fetching aliases:", error);
+    }
+  }, []);
+
+  const fetchSettings = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings");
+      const data = await res.json();
+      if (res.ok) {
+        setHiddenModels(data.hiddenModels || {});
+      }
+    } catch (error) {
+      console.log("Error fetching settings:", error);
     }
   }, []);
 
@@ -124,7 +140,8 @@ export default function ProviderDetailPage() {
   useEffect(() => {
     fetchConnections();
     fetchAliases();
-  }, [fetchConnections, fetchAliases]);
+    fetchSettings();
+  }, [fetchConnections, fetchAliases, fetchSettings]);
 
   const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
     const fullModel = `${providerAliasOverride}/${modelId}`;
@@ -220,6 +237,37 @@ export default function ProviderDetailPage() {
     } catch (error) {
       console.log("Error updating connection status:", error);
     }
+  };
+
+  const updateHiddenModels = async (nextHiddenModels) => {
+    const res = await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hiddenModels: nextHiddenModels }),
+    });
+    if (!res.ok) {
+      throw new Error("Failed to update hidden models");
+    }
+    setHiddenModels(nextHiddenModels);
+  };
+
+  const toggleHiddenModel = async (modelId, hidden) => {
+    const current = new Set(hiddenModels[providerStorageAlias] || []);
+    if (hidden) current.add(modelId);
+    else current.delete(modelId);
+    const next = { ...hiddenModels };
+    if (current.size > 0) next[providerStorageAlias] = [...current];
+    else delete next[providerStorageAlias];
+    try {
+      await updateHiddenModels(next);
+    } catch (error) {
+      console.log("Error toggling hidden model:", error);
+    }
+  };
+
+  const handleApplyHiddenModels = async (hiddenModelIds) => {
+    const next = buildHiddenModelsMap(hiddenModels, providerStorageAlias, hiddenModelIds);
+    await updateHiddenModels(next);
   };
 
   const handleSwapPriority = async (conn1, conn2) => {
@@ -320,9 +368,14 @@ export default function ProviderDetailPage() {
         fullModel,
       }));
 
+    const hiddenSet = new Set(hiddenModels[providerStorageAlias] || []);
+    const visibleModels = showHiddenModels
+      ? models
+      : models.filter((m) => !hiddenSet.has(m.id));
+
     return (
       <div className="flex flex-wrap gap-3">
-        {models.map((model) => {
+        {visibleModels.map((model) => {
           const fullModel = `${providerStorageAlias}/${model.id}`;
           const oldFormatModel = `${providerId}/${model.id}`;
           const existingAlias = Object.entries(modelAliases).find(
@@ -341,6 +394,8 @@ export default function ProviderDetailPage() {
               testStatus={modelTestResults[model.id]}
               onTest={connections.length > 0 ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelId === model.id}
+              isHidden={hiddenSet.has(model.id)}
+              onToggleHidden={() => toggleHiddenModel(model.id, !hiddenSet.has(model.id))}
             />
           );
         })}
@@ -558,6 +613,24 @@ export default function ProviderDetailPage() {
           <h2 className="text-lg font-semibold">
             {providerInfo.passthroughModels ? "Model Aliases" : "Available Models"}
           </h2>
+          {!providerInfo.passthroughModels && !isCompatible && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowManageModels(true)}
+                className="text-xs px-2 py-1 rounded border border-border text-text-muted hover:text-primary hover:border-primary/40 transition-colors"
+              >
+                Manage models
+              </button>
+              <button
+                onClick={() => setShowHiddenModels((v) => !v)}
+                className="text-xs px-2 py-1 rounded border border-border text-text-muted hover:text-primary hover:border-primary/40 transition-colors"
+              >
+                {showHiddenModels
+                  ? "Hide hidden models"
+                  : `Show hidden (${(hiddenModels[providerStorageAlias] || []).length})`}
+              </button>
+            </div>
+          )}
         </div>
         {renderModelsSection()}
       </Card>
@@ -621,11 +694,22 @@ export default function ProviderDetailPage() {
           onClose={() => setShowAddCustomModel(false)}
         />
       )}
+      {!providerInfo?.passthroughModels && !isCompatible && (
+        <ManageProviderModelsModal
+          isOpen={showManageModels}
+          providerName={providerInfo?.name || providerId}
+          models={models}
+          hiddenModelIds={hiddenModels[providerStorageAlias] || []}
+          onApply={handleApplyHiddenModels}
+          onClose={() => setShowManageModels(false)}
+          computeHidden={computeHiddenFromVisible}
+        />
+      )}
     </div>
   );
 }
 
-function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, onDeleteAlias, onTest, isTesting }) {
+function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, onDeleteAlias, onTest, isTesting, isHidden, onToggleHidden }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -639,7 +723,7 @@ function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCusto
     : undefined;
 
   return (
-    <div className={`group flex items-center gap-2 px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
+    <div className={`group flex items-center gap-2 px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50 ${isHidden ? "opacity-60" : ""}`}>
       <span
         className="material-symbols-outlined text-base"
         style={iconColor ? { color: iconColor } : undefined}
@@ -668,6 +752,17 @@ function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCusto
           {copied === `model-${model.id}` ? "check" : "content_copy"}
         </span>
       </button>
+      {!isCustom && onToggleHidden && (
+        <button
+          onClick={onToggleHidden}
+          className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
+          title={isHidden ? "Unhide model" : "Hide model"}
+        >
+          <span className="material-symbols-outlined text-sm">
+            {isHidden ? "visibility" : "visibility_off"}
+          </span>
+        </button>
+      )}
       {isCustom && (
         <button
           onClick={onDeleteAlias}
@@ -694,6 +789,127 @@ ModelRow.propTypes = {
   onDeleteAlias: PropTypes.func,
   onTest: PropTypes.func,
   isTesting: PropTypes.bool,
+  isHidden: PropTypes.bool,
+  onToggleHidden: PropTypes.func,
+};
+
+function ManageProviderModelsModal({ isOpen, onClose, providerName, models, hiddenModelIds, onApply, computeHidden }) {
+  const [search, setSearch] = useState("");
+  const [visibleSelection, setVisibleSelection] = useState(new Set());
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const hidden = new Set(hiddenModelIds || []);
+    setVisibleSelection(new Set((models || []).filter((model) => !hidden.has(model.id)).map((model) => model.id)));
+    setSearch("");
+  }, [isOpen, hiddenModelIds, models]);
+
+  const allModelIds = useMemo(() => (models || []).map((m) => m.id), [models]);
+
+  const filteredModels = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return models || [];
+    return (models || []).filter(
+      (model) => model.id.toLowerCase().includes(query) || (model.name || "").toLowerCase().includes(query)
+    );
+  }, [models, search]);
+
+  const hiddenPreview = useMemo(
+    () => computeHidden(allModelIds, [...visibleSelection]),
+    [allModelIds, visibleSelection, computeHidden]
+  );
+
+  const applyHidden = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await onApply(hiddenPreview);
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const setAllVisible = (nextVisible) => {
+    setVisibleSelection(new Set(nextVisible));
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={`Manage Models · ${providerName}`} size="md">
+      <div className="space-y-4">
+        <p className="text-sm text-text-muted">
+          Checked models stay visible in selectors. Unchecked models are hidden.
+        </p>
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search model id or name"
+        />
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="secondary" onClick={() => setAllVisible([])}>
+            Hide all
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setAllVisible(allModelIds)}>
+            Unhide all
+          </Button>
+        </div>
+        <div className="max-h-[300px] overflow-y-auto border border-border rounded-lg divide-y divide-border">
+          {filteredModels.map((model) => {
+            const checked = visibleSelection.has(model.id);
+            return (
+              <label key={model.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-sidebar/40">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(e) => {
+                    setVisibleSelection((prev) => {
+                      const next = new Set(prev);
+                      if (e.target.checked) next.add(model.id);
+                      else next.delete(model.id);
+                      return next;
+                    });
+                  }}
+                />
+                <span className="font-mono text-xs text-text-muted">{model.id}</span>
+                {model.name && model.name !== model.id && (
+                  <span className="text-xs text-text-main">{model.name}</span>
+                )}
+              </label>
+            );
+          })}
+          {filteredModels.length === 0 && (
+            <div className="px-3 py-6 text-sm text-text-muted text-center">No models found</div>
+          )}
+        </div>
+        <div className="flex items-center justify-between text-xs text-text-muted">
+          <span>Visible: {visibleSelection.size}</span>
+          <span>Hidden: {hiddenPreview.length}</span>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button size="sm" variant="secondary" onClick={applyHidden} disabled={saving}>
+            {saving ? "Saving..." : "Hide all except selected"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+ManageProviderModelsModal.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  providerName: PropTypes.string.isRequired,
+  models: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.string.isRequired,
+      name: PropTypes.string,
+    })
+  ).isRequired,
+  hiddenModelIds: PropTypes.arrayOf(PropTypes.string),
+  onApply: PropTypes.func.isRequired,
+  computeHidden: PropTypes.func.isRequired,
 };
 
 function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias }) {
@@ -1726,4 +1942,3 @@ AddCustomModelModal.propTypes = {
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 };
-

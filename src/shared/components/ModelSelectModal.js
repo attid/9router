@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 import Modal from "./Modal";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { isModelHiddenForProvider } from "@/shared/utils/modelVisibility";
 
 // Provider order: OAuth first, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -27,6 +28,8 @@ export default function ModelSelectModal({
   const [searchQuery, setSearchQuery] = useState("");
   const [combos, setCombos] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
+  const [dynamicModelsByProvider, setDynamicModelsByProvider] = useState({});
+  const [hiddenModels, setHiddenModels] = useState({});
   const [internalSelected, setInternalSelected] = useState(new Set());
 
   // Sync internal state with prop when modal opens
@@ -77,6 +80,73 @@ export default function ModelSelectModal({
     if (isOpen) fetchProviderNodes();
   }, [isOpen]);
 
+  const fetchHiddenModels = async () => {
+    try {
+      const res = await fetch("/api/settings");
+      if (!res.ok) throw new Error(`Failed to fetch settings: ${res.status}`);
+      const data = await res.json();
+      setHiddenModels(data.hiddenModels || {});
+    } catch (error) {
+      console.error("Error fetching hidden models:", error);
+      setHiddenModels({});
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) fetchHiddenModels();
+  }, [isOpen]);
+
+  const fetchDynamicModels = async () => {
+    try {
+      const activeConnections = (activeProviders || []).filter((c) => c?.id && c?.provider);
+      if (!activeConnections.length) {
+        setDynamicModelsByProvider({});
+        return;
+      }
+
+      const settled = await Promise.allSettled(
+        activeConnections.map(async (conn) => {
+          const res = await fetch(`/api/providers/${encodeURIComponent(conn.id)}/models`);
+          if (!res.ok) return { provider: conn.provider, models: [] };
+          const data = await res.json();
+          const normalized = (data.models || [])
+            .map((m) => {
+              if (typeof m === "string") return { id: m, name: m };
+              const id = m?.id || m?.model || m?.name;
+              if (!id) return null;
+              return { id, name: m?.name || m?.displayName || id };
+            })
+            .filter(Boolean);
+          return { provider: conn.provider, models: normalized };
+        })
+      );
+
+      const byProvider = {};
+      for (const r of settled) {
+        if (r.status !== "fulfilled") continue;
+        const providerId = r.value.provider;
+        if (!byProvider[providerId]) byProvider[providerId] = new Map();
+        for (const model of r.value.models) {
+          byProvider[providerId].set(model.id, model.name);
+        }
+      }
+
+      const finalMap = {};
+      Object.entries(byProvider).forEach(([providerId, modelsMap]) => {
+        finalMap[providerId] = [...modelsMap.entries()].map(([id, name]) => ({ id, name }));
+      });
+      setDynamicModelsByProvider(finalMap);
+    } catch (error) {
+      console.error("Error fetching dynamic provider models:", error);
+      setDynamicModelsByProvider({});
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) fetchDynamicModels();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, activeProviders]);
+
   const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...APIKEY_PROVIDERS }), []);
 
   // Group models by provider with priority order
@@ -102,15 +172,39 @@ export default function ModelSelectModal({
       const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
       const providerInfo = allProviders[providerId] || { name: providerId, color: "#666" };
       const isCustomProvider = isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
+      const dynamicModels = dynamicModelsByProvider[providerId] || [];
+
+      const mergeModels = (baseModels = []) => {
+        const merged = new Map();
+        for (const m of baseModels) merged.set(m.id, m);
+        for (const dm of dynamicModels) {
+          if (!merged.has(dm.id)) {
+            merged.set(dm.id, {
+              id: dm.id,
+              name: dm.name || dm.id,
+              value: `${alias}/${dm.id}`,
+            });
+          }
+        }
+        return [...merged.values()].filter(
+          (m) =>
+            !isModelHiddenForProvider(hiddenModels, {
+              aliasKey: alias,
+              providerIdKey: providerId,
+              modelId: m.id,
+            })
+        );
+      };
       
       if (providerInfo.passthroughModels) {
-        const aliasModels = Object.entries(modelAliases)
+        const aliasModelsBase = Object.entries(modelAliases)
           .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
           .map(([aliasName, fullModel]) => ({
             id: fullModel.replace(`${alias}/`, ""),
             name: aliasName,
             value: fullModel,
           }));
+        const aliasModels = mergeModels(aliasModelsBase);
         
         if (aliasModels.length > 0) {
           // Check for custom name from providerNodes (for compatible providers)
@@ -138,37 +232,39 @@ export default function ModelSelectModal({
             name: aliasName,
             value: fullModel,
           }));
+        const mergedNodeModels = mergeModels(nodeModels);
         
         // Only add to groups if there are models (consistent with other provider types)
-        if (nodeModels.length > 0) {
+        if (mergedNodeModels.length > 0) {
           groups[providerId] = {
             name: displayName,
             alias: matchedNode?.prefix || providerId,
             color: providerInfo.color,
-            models: nodeModels,
+            models: mergedNodeModels,
             isCustom: true,
             hasModels: true,
           };
         }
       } else {
-        const models = getModelsByProviderId(providerId);
+        const staticModels = getModelsByProviderId(providerId);
+        const models = mergeModels(staticModels.map((m) => ({
+          id: m.id,
+          name: m.name,
+          value: `${alias}/${m.id}`,
+        })));
         if (models.length > 0) {
           groups[providerId] = {
             name: providerInfo.name,
             alias: alias,
             color: providerInfo.color,
-            models: models.map((m) => ({
-              id: m.id,
-              name: m.name,
-              value: `${alias}/${m.id}`,
-            })),
+            models,
           };
         }
       }
     });
 
     return groups;
-  }, [activeProviders, modelAliases, allProviders, providerNodes]);
+  }, [activeProviders, modelAliases, allProviders, providerNodes, dynamicModelsByProvider, hiddenModels]);
 
   // Filter combos by search query
   const filteredCombos = useMemo(() => {
@@ -382,4 +478,3 @@ ModelSelectModal.propTypes = {
   title: PropTypes.string,
   modelAliases: PropTypes.object,
 };
-

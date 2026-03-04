@@ -61,7 +61,8 @@ const defaultData = {
     observabilityMaxJsonSize: 1024,
     outboundProxyEnabled: false,
     outboundProxyUrl: "",
-    outboundNoProxy: ""
+    outboundNoProxy: "",
+    hiddenModels: {}
   },
   pricing: {} // NEW: pricing configuration
 };
@@ -88,6 +89,7 @@ function cloneDefaultData() {
       outboundProxyEnabled: false,
       outboundProxyUrl: "",
       outboundNoProxy: "",
+      hiddenModels: {},
     },
     pricing: {},
   };
@@ -134,6 +136,16 @@ function ensureDbShape(data) {
           }
           changed = true;
         }
+      }
+
+      if (
+        next.settings.hiddenModels !== undefined &&
+        (typeof next.settings.hiddenModels !== "object" ||
+          next.settings.hiddenModels === null ||
+          Array.isArray(next.settings.hiddenModels))
+      ) {
+        next.settings.hiddenModels = {};
+        changed = true;
       }
     }
 
