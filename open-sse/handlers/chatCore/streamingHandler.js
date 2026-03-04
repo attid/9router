@@ -93,7 +93,12 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       clientEndpoint: clientRawRequest?.endpoint || null,
       providerUrl: providerUrl || null,
       providerResponse: finalContent,
-      response: { content: finalContent, thinking: contentObj?.thinking || null, type: "streaming" },
+      response: {
+        content: finalContent,
+        thinking: contentObj?.thinking || null,
+        type: "streaming",
+        meta: contentObj?.meta || null
+      },
       status: "success"
     }, { id: streamDetailId })).catch(err => {
       console.error("[RequestDetail] Failed to update streaming content:", err.message);

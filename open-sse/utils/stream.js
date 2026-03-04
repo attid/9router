@@ -16,6 +16,7 @@ const STREAM_MODE = {
   TRANSLATE: "translate",    // Full translation between formats
   PASSTHROUGH: "passthrough" // No translation, normalize output, extract usage
 };
+const RAW_SSE_MAX_BYTES = 512 * 1024;
 
 function extractTextFragments(chunk) {
   if (!chunk || typeof chunk !== "object") {
@@ -119,6 +120,40 @@ function getObservedLength(clientAcc, providerAcc) {
   return Math.max(clientLen, providerLen);
 }
 
+function appendRawChunk(raw, chunk) {
+  if (!chunk) return raw;
+  const combined = raw.value + chunk;
+  if (combined.length <= RAW_SSE_MAX_BYTES) {
+    raw.value = combined;
+    return raw;
+  }
+  raw.truncated = true;
+  raw.value = combined.slice(-RAW_SSE_MAX_BYTES);
+  return raw;
+}
+
+function toBase64(input = "") {
+  if (!input) return "";
+  try {
+    return Buffer.from(input, "utf8").toString("base64");
+  } catch {
+    try {
+      return btoa(unescape(encodeURIComponent(input)));
+    } catch {
+      return "";
+    }
+  }
+}
+
+function buildRawSseMeta(providerRaw, clientRaw) {
+  return {
+    raw_sse_b64: toBase64(providerRaw.value),
+    raw_sse_tail_b64: toBase64(clientRaw.value),
+    raw_sse_truncated: providerRaw.truncated || clientRaw.truncated,
+    raw_sse_max_bytes: RAW_SSE_MAX_BYTES
+  };
+}
+
 /**
  * Create unified SSE transform stream
  * @param {object} options
@@ -156,6 +191,8 @@ export function createSSEStream(options = {}) {
   let totalContentLength = 0;
   const clientAccumulator = { content: "", thinking: "" };
   const providerAccumulator = { content: "", thinking: "" };
+  const rawProvider = { value: "", truncated: false };
+  const rawClient = { value: "", truncated: false };
   let ttftAt = null;
 
   return new TransformStream({
@@ -172,6 +209,7 @@ export function createSSEStream(options = {}) {
 
       for (const line of lines) {
         const trimmed = line.trim();
+        appendRawChunk(rawProvider, line + "\n");
 
         // Passthrough mode: normalize and forward
         if (mode === STREAM_MODE.PASSTHROUGH) {
@@ -245,6 +283,7 @@ export function createSSEStream(options = {}) {
           }
 
           reqLogger?.appendConvertedChunk?.(output);
+          appendRawChunk(rawClient, output);
           controller.enqueue(sharedEncoder.encode(output));
           continue;
         }
@@ -261,6 +300,7 @@ export function createSSEStream(options = {}) {
         if (parsed && parsed.done) {
           const output = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(output);
+          appendRawChunk(rawClient, output);
           controller.enqueue(sharedEncoder.encode(output));
           continue;
         }
@@ -304,6 +344,7 @@ export function createSSEStream(options = {}) {
 
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
+            appendRawChunk(rawClient, output);
             controller.enqueue(sharedEncoder.encode(output));
           }
         }
@@ -323,6 +364,7 @@ export function createSSEStream(options = {}) {
               output = "data: " + buffer.slice(5);
             }
             reqLogger?.appendConvertedChunk?.(output);
+            appendRawChunk(rawClient, output);
             controller.enqueue(sharedEncoder.encode(output));
           }
 
@@ -342,6 +384,7 @@ export function createSSEStream(options = {}) {
           // Without it they can hang until timeout and trigger failover.
           const doneOutput = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(doneOutput);
+          appendRawChunk(rawClient, doneOutput);
           controller.enqueue(sharedEncoder.encode(doneOutput));
 
           if (onStreamComplete) {
@@ -349,7 +392,8 @@ export function createSSEStream(options = {}) {
             const finalThinking = clientAccumulator.thinking || providerAccumulator.thinking;
             onStreamComplete({
               content: finalContent,
-              thinking: finalThinking
+              thinking: finalThinking,
+              meta: buildRawSseMeta(rawProvider, rawClient)
             }, usage, ttftAt);
           }
           return;
@@ -372,6 +416,7 @@ export function createSSEStream(options = {}) {
                 appendFragmentsToAccumulator(clientAccumulator, item);
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
+                appendRawChunk(rawClient, output);
                 controller.enqueue(sharedEncoder.encode(output));
               }
             }
@@ -392,12 +437,14 @@ export function createSSEStream(options = {}) {
             appendFragmentsToAccumulator(clientAccumulator, item);
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
+            appendRawChunk(rawClient, output);
             controller.enqueue(sharedEncoder.encode(output));
           }
         }
 
         const doneOutput = "data: [DONE]\n\n";
         reqLogger?.appendConvertedChunk?.(doneOutput);
+        appendRawChunk(rawClient, doneOutput);
         controller.enqueue(sharedEncoder.encode(doneOutput));
 
         const observedLength = Math.max(totalContentLength, getObservedLength(clientAccumulator, providerAccumulator));
@@ -416,7 +463,8 @@ export function createSSEStream(options = {}) {
           const finalThinking = clientAccumulator.thinking || providerAccumulator.thinking;
           onStreamComplete({
             content: finalContent,
-            thinking: finalThinking
+            thinking: finalThinking,
+            meta: buildRawSseMeta(rawProvider, rawClient)
           }, state?.usage, ttftAt);
         }
       } catch (error) {
