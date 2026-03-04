@@ -152,6 +152,25 @@ export default function ModelSelectModal({
   // Group models by provider with priority order
   const groupedModels = useMemo(() => {
     const groups = {};
+
+    const getAliasModelsForProvider = (providerId, alias) =>
+      Object.entries(modelAliases || {})
+        .filter(([, fullModel]) =>
+          typeof fullModel === "string" &&
+          (fullModel.startsWith(`${alias}/`) || fullModel.startsWith(`${providerId}/`))
+        )
+        .map(([aliasName, fullModel]) => {
+          const prefix = fullModel.startsWith(`${alias}/`) ? `${alias}/` : `${providerId}/`;
+          const modelId = fullModel.slice(prefix.length);
+          if (!modelId) return null;
+          const displayName = aliasName === fullModel ? modelId : aliasName;
+          return {
+            id: modelId,
+            name: displayName,
+            value: fullModel,
+          };
+        })
+        .filter(Boolean);
     
     // Get all active provider IDs from connections
     const activeConnectionIds = activeProviders.map(p => p.provider);
@@ -174,16 +193,18 @@ export default function ModelSelectModal({
       const isCustomProvider = isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
       const dynamicModels = dynamicModelsByProvider[providerId] || [];
 
-      const mergeModels = (baseModels = []) => {
+      const mergeModels = (baseModels = [], { includeDynamic = true } = {}) => {
         const merged = new Map();
         for (const m of baseModels) merged.set(m.id, m);
-        for (const dm of dynamicModels) {
-          if (!merged.has(dm.id)) {
-            merged.set(dm.id, {
-              id: dm.id,
-              name: dm.name || dm.id,
-              value: `${alias}/${dm.id}`,
-            });
+        if (includeDynamic) {
+          for (const dm of dynamicModels) {
+            if (!merged.has(dm.id)) {
+              merged.set(dm.id, {
+                id: dm.id,
+                name: dm.name || dm.id,
+                value: `${alias}/${dm.id}`,
+              });
+            }
           }
         }
         return [...merged.values()].filter(
@@ -197,14 +218,10 @@ export default function ModelSelectModal({
       };
       
       if (providerInfo.passthroughModels) {
-        const aliasModelsBase = Object.entries(modelAliases)
-          .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
-          .map(([aliasName, fullModel]) => ({
-            id: fullModel.replace(`${alias}/`, ""),
-            name: aliasName,
-            value: fullModel,
-          }));
-        const aliasModels = mergeModels(aliasModelsBase);
+        const aliasModelsBase = getAliasModelsForProvider(providerId, alias);
+        // Passthrough providers (e.g. OpenRouter): show user-defined aliases only.
+        // Pulling full dynamic /models list floods picker with hundreds of models.
+        const aliasModels = mergeModels(aliasModelsBase, { includeDynamic: false });
         
         if (aliasModels.length > 0) {
           // Check for custom name from providerNodes (for compatible providers)
@@ -225,13 +242,7 @@ export default function ModelSelectModal({
         
         // Get models from modelAliases using providerId (not prefix)
         // modelAliases format: { alias: "providerId/modelId" }
-        const nodeModels = Object.entries(modelAliases)
-          .filter(([, fullModel]) => fullModel.startsWith(`${providerId}/`))
-          .map(([aliasName, fullModel]) => ({
-            id: fullModel.replace(`${providerId}/`, ""),
-            name: aliasName,
-            value: fullModel,
-          }));
+        const nodeModels = getAliasModelsForProvider(providerId, alias);
         const mergedNodeModels = mergeModels(nodeModels);
         
         // Only add to groups if there are models (consistent with other provider types)
@@ -247,11 +258,15 @@ export default function ModelSelectModal({
         }
       } else {
         const staticModels = getModelsByProviderId(providerId);
-        const models = mergeModels(staticModels.map((m) => ({
-          id: m.id,
-          name: m.name,
-          value: `${alias}/${m.id}`,
-        })));
+        const aliasModels = getAliasModelsForProvider(providerId, alias);
+        const models = mergeModels([
+          ...staticModels.map((m) => ({
+            id: m.id,
+            name: m.name,
+            value: `${alias}/${m.id}`,
+          })),
+          ...aliasModels,
+        ]);
         if (models.length > 0) {
           groups[providerId] = {
             name: providerInfo.name,
