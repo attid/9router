@@ -57,7 +57,7 @@ describe("chatTestUtils.buildRequestPayload", () => {
           role: "user",
           content: [
             { type: "input_text", text: "describe" },
-            { type: "image_url", image_url: { url: "data:image/jpeg;base64,BBB" } },
+            { type: "input_image", image_url: "data:image/jpeg;base64,BBB" },
           ],
         },
       ],

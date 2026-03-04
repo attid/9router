@@ -55,7 +55,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog, providerUrl }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && provider === "codex");
   if (!isSSE) return null; // not handled here
@@ -65,7 +65,9 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
   const ctx = {
     provider, model, connectionId, apiKeyId: apiKey,
     request: extractRequestConfig(body, stream),
-    providerRequest: finalBody || translatedBody || null
+    providerRequest: finalBody || translatedBody || null,
+    clientEndpoint: clientRawRequest?.endpoint || null,
+    providerUrl: providerUrl || null,
   };
 
   // Codex/Responses API SSE path
@@ -89,7 +91,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
         tokens: { prompt_tokens: usage.input_tokens || 0, completion_tokens: usage.output_tokens || 0 },
         response: { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
         status: "success"
-      }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
+      })).catch(() => {});
 
       // Client is Responses API → return as-is
       if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
@@ -151,7 +153,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
         finish_reason: parsed.choices?.[0]?.finish_reason || "unknown"
       },
       status: "success"
-    }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
+    })).catch(() => {});
 
     return { success: true, response: new Response(JSON.stringify(parsed), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {

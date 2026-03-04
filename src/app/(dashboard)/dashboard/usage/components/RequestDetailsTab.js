@@ -386,6 +386,18 @@ export default function RequestDetailsTab() {
                 <span className="text-text-muted">Model:</span>{" "}
                 <span className="text-text-main font-mono">{selectedDetail.model}</span>
               </div>
+              <div className="col-span-2">
+                <span className="text-text-muted">Client Endpoint:</span>{" "}
+                <span className="text-text-main font-mono break-all">
+                  {selectedDetail.clientEndpoint || <span className="text-text-muted italic">unknown</span>}
+                </span>
+              </div>
+              <div className="col-span-2">
+                <span className="text-text-muted">Upstream URL:</span>{" "}
+                <span className="text-text-main font-mono break-all">
+                  {selectedDetail.providerUrl || <span className="text-text-muted italic">unknown</span>}
+                </span>
+              </div>
               <div>
                 <span className="text-text-muted">Status:</span>{" "}
                 <span className={cn(

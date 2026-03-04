@@ -61,6 +61,10 @@ export function convertResponsesApiFormat(body) {
         ? item.content.map(c => {
           if (c.type === "input_text") return { type: "text", text: c.text };
           if (c.type === "output_text") return { type: "text", text: c.text };
+          if (c.type === "input_image") {
+            const url = typeof c.image_url === "string" ? c.image_url : c.image_url?.url;
+            if (url) return { type: "image_url", image_url: { url } };
+          }
           return c;
         })
         : item.content;

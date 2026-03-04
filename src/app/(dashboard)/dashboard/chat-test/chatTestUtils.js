@@ -7,7 +7,7 @@ export function buildRequestPayload({ apiMode, model, prompt, imageDataUrl }) {
   if (apiMode === "responses") {
     const content = [{ type: "input_text", text: normalizedPrompt }];
     if (normalizedImage) {
-      content.push({ type: "image_url", image_url: { url: normalizedImage } });
+      content.push({ type: "input_image", image_url: normalizedImage });
     }
 
     return {

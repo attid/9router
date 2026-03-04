@@ -54,7 +54,7 @@ export function handleStreamingResponse({ providerResponse, provider, model, sou
 /**
  * Build onStreamComplete callback for streaming usage tracking.
  */
-export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest }) {
+export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, providerUrl }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
   const onStreamComplete = (contentObj, usage, ttftAt) => {
@@ -69,6 +69,8 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       providerRequest: finalBody || translatedBody || null,
+      clientEndpoint: clientRawRequest?.endpoint || null,
+      providerUrl: providerUrl || null,
       providerResponse: contentObj.content || "[Empty streaming response]",
       response: { content: contentObj.content || "[Empty streaming response]", thinking: contentObj.thinking || null, type: "streaming" },
       status: "success"

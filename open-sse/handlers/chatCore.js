@@ -85,6 +85,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       tokens: { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       providerRequest: translatedBody || null,
+      clientEndpoint: clientRawRequest?.endpoint || null,
       response: { error: error.message || String(error), status: error.name === "AbortError" ? 499 : 502, thinking: null },
       status: "error"
     })).catch(() => {});
@@ -125,6 +126,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       tokens: { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       providerRequest: finalBody || translatedBody || null,
+      clientEndpoint: clientRawRequest?.endpoint || null,
+      providerUrl: providerUrl || null,
       response: { error: message, status: statusCode, thinking: null },
       status: "error"
     })).catch(() => {});
@@ -138,7 +141,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, retryAfterMs);
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess };
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, providerUrl };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => {});
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

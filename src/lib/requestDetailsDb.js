@@ -160,6 +160,8 @@ export async function getRequestDetailsDb() {
         provider TEXT,
         model TEXT,
         connection_id TEXT,
+        client_endpoint TEXT,
+        provider_url TEXT,
         timestamp INTEGER NOT NULL,
         status TEXT,
         latency TEXT,
@@ -189,6 +191,12 @@ export async function getRequestDetailsDb() {
       const columns = db.pragma('table_info(request_details)');
       if (!columns.some(c => c.name === 'api_key_id')) {
         db.exec('ALTER TABLE request_details ADD COLUMN api_key_id TEXT');
+      }
+      if (!columns.some(c => c.name === 'client_endpoint')) {
+        db.exec('ALTER TABLE request_details ADD COLUMN client_endpoint TEXT');
+      }
+      if (!columns.some(c => c.name === 'provider_url')) {
+        db.exec('ALTER TABLE request_details ADD COLUMN provider_url TEXT');
       }
     } catch { /* column already exists */ }
 
@@ -240,9 +248,9 @@ async function flushToDatabase() {
     // Prepare statements outside transaction for better performance
     const insertStmt = db.prepare(`
       INSERT OR REPLACE INTO request_details
-      (id, provider, model, connection_id, timestamp, status, latency, tokens,
+      (id, provider, model, connection_id, client_endpoint, provider_url, timestamp, status, latency, tokens,
        request, provider_request, provider_response, response, api_key_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const deleteStmt = db.prepare(`
@@ -277,6 +285,8 @@ async function flushToDatabase() {
           item.provider || null,
           item.model || null,
           item.connectionId || null,
+          item.clientEndpoint || null,
+          item.providerUrl || null,
           new Date(item.timestamp).getTime(),
           item.status || null,
           JSON.stringify(item.latency || {}),
@@ -483,6 +493,8 @@ export async function getRequestDetails(filter = {}) {
     provider: row.provider,
     model: row.model,
     connectionId: row.connection_id,
+    clientEndpoint: row.client_endpoint || null,
+    providerUrl: row.provider_url || null,
     timestamp: new Date(row.timestamp).toISOString(),
     status: row.status,
     latency: safeJsonParse(row.latency),
@@ -532,6 +544,8 @@ export async function getRequestDetailById(id) {
     provider: row.provider,
     model: row.model,
     connectionId: row.connection_id,
+    clientEndpoint: row.client_endpoint || null,
+    providerUrl: row.provider_url || null,
     timestamp: new Date(row.timestamp).toISOString(),
     status: row.status,
     latency: safeJsonParse(row.latency),
