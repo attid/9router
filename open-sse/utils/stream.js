@@ -17,6 +17,90 @@ const STREAM_MODE = {
   PASSTHROUGH: "passthrough" // No translation, normalize output, extract usage
 };
 
+function extractTextFragments(chunk) {
+  if (!chunk || typeof chunk !== "object") {
+    return { content: "", thinking: "" };
+  }
+
+  const type = chunk.type || chunk.event;
+  const data = chunk.data || chunk;
+  let content = "";
+  let thinking = "";
+
+  // Claude deltas
+  if (data.delta?.text && typeof data.delta.text === "string") {
+    content += data.delta.text;
+  }
+  if (data.delta?.thinking && typeof data.delta.thinking === "string") {
+    thinking += data.delta.thinking;
+  }
+
+  // OpenAI chat chunks
+  const openAiDelta = data.choices?.[0]?.delta;
+  if (openAiDelta?.content && typeof openAiDelta.content === "string") {
+    content += openAiDelta.content;
+  }
+  if (openAiDelta?.reasoning_content && typeof openAiDelta.reasoning_content === "string") {
+    thinking += openAiDelta.reasoning_content;
+  }
+
+  // Gemini chunks
+  const parts = data.candidates?.[0]?.content?.parts;
+  if (Array.isArray(parts)) {
+    for (const part of parts) {
+      if (!part?.text || typeof part.text !== "string") continue;
+      if (part.thought === true) thinking += part.text;
+      else content += part.text;
+    }
+  }
+
+  // OpenAI Responses API events
+  if (type === "response.output_text.delta" && typeof data.delta === "string") {
+    content += data.delta;
+  }
+  if (type === "response.output_text.done" && typeof data.text === "string") {
+    content += data.text;
+  }
+  if (type === "response.output_item.done") {
+    const itemContent = data.item?.content;
+    if (Array.isArray(itemContent)) {
+      for (const part of itemContent) {
+        if (!part || typeof part.text !== "string") continue;
+        if (part.type === "reasoning" || part.type === "reasoning_text") thinking += part.text;
+        else content += part.text;
+      }
+    }
+  }
+  if (type === "response.completed") {
+    const outputItems = data.response?.output;
+    if (Array.isArray(outputItems)) {
+      for (const item of outputItems) {
+        const itemContent = item?.content;
+        if (!Array.isArray(itemContent)) continue;
+        for (const part of itemContent) {
+          if (!part || typeof part.text !== "string") continue;
+          if (part.type === "reasoning" || part.type === "reasoning_text") thinking += part.text;
+          else content += part.text;
+        }
+      }
+    }
+  }
+
+  return { content, thinking };
+}
+
+function appendFragments(acc, chunk) {
+  const fragments = extractTextFragments(chunk);
+  if (fragments.content) {
+    acc.totalContentLength += fragments.content.length;
+    acc.accumulatedContent += fragments.content;
+  }
+  if (fragments.thinking) {
+    acc.totalContentLength += fragments.thinking.length;
+    acc.accumulatedThinking += fragments.thinking;
+  }
+}
+
 /**
  * Create unified SSE transform stream
  * @param {object} options
@@ -107,17 +191,11 @@ export function createSSEStream(options = {}) {
                 continue;
               }
 
-              const delta = parsed.choices?.[0]?.delta;
-              const content = delta?.content;
-              const reasoning = delta?.reasoning_content;
-              if (content && typeof content === "string") {
-                totalContentLength += content.length;
-                accumulatedContent += content;
-              }
-              if (reasoning && typeof reasoning === "string") {
-                totalContentLength += reasoning.length;
-                accumulatedThinking += reasoning;
-              }
+              const acc = { totalContentLength, accumulatedContent, accumulatedThinking };
+              appendFragments(acc, parsed);
+              totalContentLength = acc.totalContentLength;
+              accumulatedContent = acc.accumulatedContent;
+              accumulatedThinking = acc.accumulatedThinking;
 
               const extracted = extractUsage(parsed);
               if (extracted) {
@@ -169,43 +247,6 @@ export function createSSEStream(options = {}) {
           continue;
         }
 
-        // Claude format - content
-        if (parsed.delta?.text) {
-          totalContentLength += parsed.delta.text.length;
-          accumulatedContent += parsed.delta.text;
-        }
-        // Claude format - thinking
-        if (parsed.delta?.thinking) {
-          totalContentLength += parsed.delta.thinking.length;
-          accumulatedThinking += parsed.delta.thinking;
-        }
-        
-        // OpenAI format - content
-        if (parsed.choices?.[0]?.delta?.content) {
-          totalContentLength += parsed.choices[0].delta.content.length;
-          accumulatedContent += parsed.choices[0].delta.content;
-        }
-        // OpenAI format - reasoning
-        if (parsed.choices?.[0]?.delta?.reasoning_content) {
-          totalContentLength += parsed.choices[0].delta.reasoning_content.length;
-          accumulatedThinking += parsed.choices[0].delta.reasoning_content;
-        }
-        
-        // Gemini format
-        if (parsed.candidates?.[0]?.content?.parts) {
-          for (const part of parsed.candidates[0].content.parts) {
-            if (part.text && typeof part.text === "string") {
-              totalContentLength += part.text.length;
-              // Check if this is thinking content
-              if (part.thought === true) {
-                accumulatedThinking += part.text;
-              } else {
-                accumulatedContent += part.text;
-              }
-            }
-          }
-        }
-
         // Extract usage
         const extracted = extractUsage(parsed);
         if (extracted) state.usage = extracted; // Keep original usage for logging
@@ -227,6 +268,12 @@ export function createSSEStream(options = {}) {
             if (!hasValuableContent(item, sourceFormat)) {
               continue; // Skip this empty chunk
             }
+
+            const acc = { totalContentLength, accumulatedContent, accumulatedThinking };
+            appendFragments(acc, item);
+            totalContentLength = acc.totalContentLength;
+            accumulatedContent = acc.accumulatedContent;
+            accumulatedThinking = acc.accumulatedThinking;
 
             // Inject estimated usage if finish chunk has no valid usage
             const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
