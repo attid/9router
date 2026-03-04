@@ -89,16 +89,34 @@ function extractTextFragments(chunk) {
   return { content, thinking };
 }
 
-function appendFragments(acc, chunk) {
+function getFragmentsLength(chunk) {
   const fragments = extractTextFragments(chunk);
-  if (fragments.content) {
-    acc.totalContentLength += fragments.content.length;
-    acc.accumulatedContent += fragments.content;
+  return (fragments.content?.length || 0) + (fragments.thinking?.length || 0);
+}
+
+function mergeText(existing, incoming) {
+  if (!incoming) return existing || "";
+  if (!existing) return incoming;
+  if (existing === incoming) return existing;
+  if (existing.endsWith(incoming)) return existing;
+  if (incoming.endsWith(existing)) return incoming;
+  return existing + incoming;
+}
+
+function appendFragmentsToAccumulator(acc, chunk) {
+  const { content, thinking } = extractTextFragments(chunk);
+  if (content) {
+    acc.content = mergeText(acc.content, content);
   }
-  if (fragments.thinking) {
-    acc.totalContentLength += fragments.thinking.length;
-    acc.accumulatedThinking += fragments.thinking;
+  if (thinking) {
+    acc.thinking = mergeText(acc.thinking, thinking);
   }
+}
+
+function getObservedLength(clientAcc, providerAcc) {
+  const clientLen = (clientAcc.content?.length || 0) + (clientAcc.thinking?.length || 0);
+  const providerLen = (providerAcc.content?.length || 0) + (providerAcc.thinking?.length || 0);
+  return Math.max(clientLen, providerLen);
 }
 
 /**
@@ -136,8 +154,8 @@ export function createSSEStream(options = {}) {
   const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model } : null;
 
   let totalContentLength = 0;
-  let accumulatedContent = "";
-  let accumulatedThinking = "";
+  const clientAccumulator = { content: "", thinking: "" };
+  const providerAccumulator = { content: "", thinking: "" };
   let ttftAt = null;
 
   return new TransformStream({
@@ -191,11 +209,8 @@ export function createSSEStream(options = {}) {
                 continue;
               }
 
-              const acc = { totalContentLength, accumulatedContent, accumulatedThinking };
-              appendFragments(acc, parsed);
-              totalContentLength = acc.totalContentLength;
-              accumulatedContent = acc.accumulatedContent;
-              accumulatedThinking = acc.accumulatedThinking;
+              totalContentLength += getFragmentsLength(parsed);
+              appendFragmentsToAccumulator(clientAccumulator, parsed);
 
               const extracted = extractUsage(parsed);
               if (extracted) {
@@ -240,6 +255,9 @@ export function createSSEStream(options = {}) {
         const parsed = parseSSELine(trimmed);
         if (!parsed) continue;
 
+        // Keep provider-side fragments as fallback when translated output has no assistant text.
+        appendFragmentsToAccumulator(providerAccumulator, parsed);
+
         if (parsed && parsed.done) {
           const output = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(output);
@@ -269,11 +287,8 @@ export function createSSEStream(options = {}) {
               continue; // Skip this empty chunk
             }
 
-            const acc = { totalContentLength, accumulatedContent, accumulatedThinking };
-            appendFragments(acc, item);
-            totalContentLength = acc.totalContentLength;
-            accumulatedContent = acc.accumulatedContent;
-            accumulatedThinking = acc.accumulatedThinking;
+            totalContentLength += getFragmentsLength(item);
+            appendFragmentsToAccumulator(clientAccumulator, item);
 
             // Inject estimated usage if finish chunk has no valid usage
             const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
@@ -330,9 +345,11 @@ export function createSSEStream(options = {}) {
           controller.enqueue(sharedEncoder.encode(doneOutput));
 
           if (onStreamComplete) {
+            const finalContent = clientAccumulator.content || providerAccumulator.content;
+            const finalThinking = clientAccumulator.thinking || providerAccumulator.thinking;
             onStreamComplete({
-              content: accumulatedContent,
-              thinking: accumulatedThinking
+              content: finalContent,
+              thinking: finalThinking
             }, usage, ttftAt);
           }
           return;
@@ -352,6 +369,7 @@ export function createSSEStream(options = {}) {
 
             if (translated?.length > 0) {
               for (const item of translated) {
+                appendFragmentsToAccumulator(clientAccumulator, item);
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
                 controller.enqueue(sharedEncoder.encode(output));
@@ -371,6 +389,7 @@ export function createSSEStream(options = {}) {
 
         if (flushed?.length > 0) {
           for (const item of flushed) {
+            appendFragmentsToAccumulator(clientAccumulator, item);
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
@@ -381,8 +400,9 @@ export function createSSEStream(options = {}) {
         reqLogger?.appendConvertedChunk?.(doneOutput);
         controller.enqueue(sharedEncoder.encode(doneOutput));
 
-        if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
-          state.usage = estimateUsage(body, totalContentLength, sourceFormat);
+        const observedLength = Math.max(totalContentLength, getObservedLength(clientAccumulator, providerAccumulator));
+        if (!hasValidUsage(state?.usage) && observedLength > 0) {
+          state.usage = estimateUsage(body, observedLength, sourceFormat);
         }
 
         if (hasValidUsage(state?.usage)) {
@@ -392,9 +412,11 @@ export function createSSEStream(options = {}) {
         }
         
         if (onStreamComplete) {
+          const finalContent = clientAccumulator.content || providerAccumulator.content;
+          const finalThinking = clientAccumulator.thinking || providerAccumulator.thinking;
           onStreamComplete({
-            content: accumulatedContent,
-            thinking: accumulatedThinking
+            content: finalContent,
+            thinking: finalThinking
           }, state?.usage, ttftAt);
         }
       } catch (error) {

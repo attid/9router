@@ -12,6 +12,26 @@ const SSE_HEADERS = {
   "Access-Control-Allow-Origin": "*"
 };
 
+function buildStructuredStreamingFallback(contentObj, usage) {
+  const completionTokens = usage?.completion_tokens ?? usage?.output_tokens ?? 0;
+  const promptTokens = usage?.prompt_tokens ?? usage?.input_tokens ?? 0;
+  const hasThinking = Boolean(contentObj?.thinking && String(contentObj.thinking).trim());
+  const summary = {
+    type: "no_text_stream_output",
+    reason: "No assistant text fragments were detected in translated or provider stream events.",
+    output_tokens: completionTokens,
+    input_tokens: promptTokens,
+    has_thinking: hasThinking
+  };
+  return `[No text output in stream]\n${JSON.stringify(summary, null, 2)}`;
+}
+
+function getFinalStreamingContent(contentObj, usage) {
+  const text = typeof contentObj?.content === "string" ? contentObj.content.trim() : "";
+  if (text) return contentObj.content;
+  return buildStructuredStreamingFallback(contentObj, usage);
+}
+
 /**
  * Determine which SSE transform stream to use based on provider/format.
  */
@@ -62,6 +82,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
     };
+    const finalContent = getFinalStreamingContent(contentObj, usage);
 
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId, apiKeyId: apiKey,
@@ -71,8 +92,8 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       providerRequest: finalBody || translatedBody || null,
       clientEndpoint: clientRawRequest?.endpoint || null,
       providerUrl: providerUrl || null,
-      providerResponse: contentObj.content || "[Empty streaming response]",
-      response: { content: contentObj.content || "[Empty streaming response]", thinking: contentObj.thinking || null, type: "streaming" },
+      providerResponse: finalContent,
+      response: { content: finalContent, thinking: contentObj?.thinking || null, type: "streaming" },
       status: "success"
     }, { id: streamDetailId })).catch(err => {
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
