@@ -13,13 +13,7 @@ import {
   Legend,
 } from "recharts";
 import Card from "@/shared/components/Card";
-
-const PERIODS = [
-  { value: "24h", label: "24h" },
-  { value: "7d", label: "7D" },
-  { value: "30d", label: "30D" },
-  { value: "60d", label: "60D" },
-];
+import { buildUsageQuery } from "@/shared/utils/usagePeriod";
 
 const fmtTokens = (n) => {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -29,8 +23,7 @@ const fmtTokens = (n) => {
 
 const fmtCost = (n) => `$${(n || 0).toFixed(4)}`;
 
-export default function UsageChart() {
-  const [period, setPeriod] = useState("7d");
+export default function UsageChart({ usageRange }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState("tokens");
@@ -38,7 +31,8 @@ export default function UsageChart() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/usage/chart?period=${period}`);
+      const query = buildUsageQuery(usageRange);
+      const res = await fetch(`/api/usage/chart?${query}`);
       if (res.ok) {
         const json = await res.json();
         setData(json);
@@ -48,7 +42,7 @@ export default function UsageChart() {
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [usageRange]);
 
   useEffect(() => {
     fetchData();
@@ -72,17 +66,6 @@ export default function UsageChart() {
           >
             Cost
           </button>
-        </div>
-        <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
-          {PERIODS.map((p) => (
-            <button
-              key={p.value}
-              onClick={() => setPeriod(p.value)}
-              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${period === p.value ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
-            >
-              {p.label}
-            </button>
-          ))}
         </div>
       </div>
 
@@ -157,4 +140,10 @@ export default function UsageChart() {
   );
 }
 
-UsageChart.propTypes = {};
+UsageChart.propTypes = {
+  usageRange: PropTypes.shape({
+    preset: PropTypes.string,
+    start: PropTypes.string,
+    end: PropTypes.string,
+  }).isRequired,
+};

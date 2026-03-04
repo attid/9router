@@ -5,6 +5,7 @@ import path from "path";
 import os from "os";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import { getUsageRange, normalizeUsagePreset } from "../shared/utils/usagePeriod.js";
 
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
 
@@ -128,7 +129,7 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
 /**
  * Lightweight: get only activeRequests + recentRequests without full stats recalc
  */
-export async function getActiveRequests() {
+export async function getActiveRequests(filter = {}) {
   const activeRequests = [];
 
   // Build active requests from pending state
@@ -157,8 +158,10 @@ export async function getActiveRequests() {
   const db = await getUsageDb();
   await db.read();
   const history = db.data.history || [];
+  const range = resolveUsageFilter(filter);
+  const filteredHistory = history.filter((entry) => historyMatchesRange(entry, range));
   const seen = new Set();
-  const recentRequests = [...history]
+  const recentRequests = [...filteredHistory]
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
     .map((e) => {
       const t = e.tokens || {};
@@ -180,6 +183,51 @@ export async function getActiveRequests() {
   const errorProvider = (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "";
 
   return { activeRequests, recentRequests, errorProvider };
+}
+
+function toMillis(value) {
+  if (!value) return null;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function resolveUsageFilter(filter = {}, now = new Date()) {
+  const hasPreset = typeof filter.preset === "string" && filter.preset.length > 0;
+  if (hasPreset) {
+    const preset = normalizeUsagePreset(filter.preset);
+    const range = getUsageRange(preset, now);
+    return {
+      preset: range.preset,
+      start: range.start || null,
+      end: range.end || null,
+      startMs: toMillis(range.start),
+      endMs: toMillis(range.end),
+    };
+  }
+
+  const startMs = toMillis(filter.start);
+  const endMs = toMillis(filter.end);
+  return {
+    preset: null,
+    start: filter.start || null,
+    end: filter.end || null,
+    startMs,
+    endMs,
+  };
+}
+
+function historyMatchesRange(entry, range) {
+  const ts = toMillis(entry?.timestamp);
+  if (ts === null) return false;
+  if (range.startMs !== null && ts < range.startMs) return false;
+  if (range.endMs !== null && ts > range.endMs) return false;
+  return true;
+}
+
+function shouldIncludeLiveData(filter = {}, now = new Date()) {
+  const range = resolveUsageFilter(filter, now);
+  if (range.endMs === null) return true;
+  return range.endMs >= now.getTime();
 }
 
 /**
@@ -459,9 +507,12 @@ async function calculateCost(provider, model, tokens) {
 /**
  * Get aggregated usage stats
  */
-export async function getUsageStats() {
+export async function getUsageStats(filter = {}) {
   const db = await getUsageDb();
   const history = db.data.history || [];
+  const range = resolveUsageFilter(filter);
+  const filteredHistory = history.filter((entry) => historyMatchesRange(entry, range));
+  const includeLiveData = shouldIncludeLiveData(filter);
 
   // Import localDb to get provider connection names and API keys
   const { getProviderConnections, getApiKeys, getProviderNodes } = await import("@/lib/localDb.js");
@@ -510,7 +561,7 @@ export async function getUsageStats() {
 
   // 20 most recent requests from history (always in sync with SSE emit)
   const seen = new Set();
-  const recentRequests = [...history]
+  const recentRequests = [...filteredHistory]
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
     .map((e) => {
       const t = e.tokens || {};
@@ -537,7 +588,7 @@ export async function getUsageStats() {
     .slice(0, 20);
 
   const stats = {
-    totalRequests: history.length,
+    totalRequests: filteredHistory.length,
     totalPromptTokens: 0,
     totalCompletionTokens: 0,
     totalCacheReadTokens: 0,
@@ -549,28 +600,30 @@ export async function getUsageStats() {
     byApiKey: {},
     byEndpoint: {},
     last10Minutes: [],
-    pending: pendingRequests,
+    pending: includeLiveData ? pendingRequests : { byModel: {}, byAccount: {} },
     activeRequests: [],
     recentRequests,
-    errorProvider: (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "",
+    errorProvider: includeLiveData && (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "",
   };
 
   // Build active requests list from pending counts
-  for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
-    for (const [modelKey, count] of Object.entries(models)) {
-      if (count > 0) {
-        const accountName = connectionMap[connectionId] || `Account ${connectionId.slice(0, 8)}...`;
-        // modelKey is "model (provider)"
-        const match = modelKey.match(/^(.*) \((.*)\)$/);
-        const modelName = match ? match[1] : modelKey;
-        const providerName = match ? match[2] : "unknown";
+  if (includeLiveData) {
+    for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
+      for (const [modelKey, count] of Object.entries(models)) {
+        if (count > 0) {
+          const accountName = connectionMap[connectionId] || `Account ${connectionId.slice(0, 8)}...`;
+          // modelKey is "model (provider)"
+          const match = modelKey.match(/^(.*) \((.*)\)$/);
+          const modelName = match ? match[1] : modelKey;
+          const providerName = match ? match[2] : "unknown";
 
-        stats.activeRequests.push({
-          model: modelName,
-          provider: providerName,
-          account: accountName,
-          count
-        });
+          stats.activeRequests.push({
+            model: modelName,
+            provider: providerName,
+            account: accountName,
+            count
+          });
+        }
       }
     }
   }
@@ -595,7 +648,7 @@ export async function getUsageStats() {
     stats.last10Minutes.push(bucketMap[bucketKey]);
   }
 
-  for (const entry of history) {
+  for (const entry of filteredHistory) {
     const rawPrompt = entry.tokens?.prompt_tokens || 0;
     const completionTokens = entry.tokens?.completion_tokens || 0;
     const cacheRead = entry.tokens?.cache_read_input_tokens || entry.tokens?.cached_tokens || 0;
@@ -805,43 +858,72 @@ export async function getUsageStats() {
 
 /**
  * Get time-series chart data for a given period
- * @param {"24h"|"7d"|"30d"|"60d"} period
+ * @param {"24h"|"7d"|"30d"|"60d"|{preset?: string, start?: string|null, end?: string|null}} periodOrRange
  * @returns {Promise<Array<{label: string, tokens: number, cost: number}>>}
  */
-export async function getChartData(period = "7d") {
+export async function getChartData(periodOrRange = "7d") {
   const db = await getUsageDb();
   const history = db.data.history || [];
-  const now = Date.now();
+  const nowMs = Date.now();
 
-  let bucketCount, bucketMs, labelFn;
-  if (period === "24h") {
-    bucketCount = 24;
-    bucketMs = 3600000; // 1 hour
-    labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-  } else if (period === "7d") {
-    bucketCount = 7;
-    bucketMs = 86400000;
-    labelFn = (ts) => new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  } else if (period === "30d") {
-    bucketCount = 30;
-    bucketMs = 86400000;
-    labelFn = (ts) => new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  let startTime;
+  let endTime;
+
+  if (typeof periodOrRange === "string") {
+    const period = periodOrRange;
+    if (period === "24h") {
+      endTime = nowMs;
+      startTime = endTime - 24 * 3600000;
+    } else if (period === "7d") {
+      endTime = nowMs;
+      startTime = endTime - 7 * 86400000;
+    } else if (period === "30d") {
+      endTime = nowMs;
+      startTime = endTime - 30 * 86400000;
+    } else {
+      endTime = nowMs;
+      startTime = endTime - 60 * 86400000;
+    }
   } else {
-    bucketCount = 60;
-    bucketMs = 86400000;
-    labelFn = (ts) => new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const range = resolveUsageFilter(periodOrRange);
+    const oldestTs = history.reduce((min, entry) => {
+      const ts = toMillis(entry?.timestamp);
+      if (ts === null) return min;
+      if (min === null) return ts;
+      return Math.min(min, ts);
+    }, null);
+
+    startTime = range.startMs !== null ? range.startMs : oldestTs;
+    endTime = range.endMs !== null ? range.endMs : nowMs;
+
+    if (startTime === null) {
+      startTime = endTime - 24 * 3600000;
+    }
   }
 
-  const startTime = now - bucketCount * bucketMs;
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || startTime >= endTime) {
+    return [];
+  }
+
+  const spanMs = endTime - startTime;
+  const hourly = spanMs <= 2 * 86400000;
+  const bucketMs = hourly ? 3600000 : 86400000;
+  const bucketCount = Math.max(1, Math.min(90, Math.ceil(spanMs / bucketMs)));
+  const effectiveBucketMs = Math.ceil(spanMs / bucketCount);
+  const labelFn = hourly
+    ? (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })
+    : (ts) => new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
   const buckets = Array.from({ length: bucketCount }, (_, i) => {
-    const ts = startTime + i * bucketMs;
-    return { label: labelFn(ts), tokens: 0, cost: 0, _ts: ts };
+    const ts = startTime + i * effectiveBucketMs;
+    return { label: labelFn(ts), tokens: 0, cost: 0 };
   });
 
   for (const entry of history) {
-    const entryTime = new Date(entry.timestamp).getTime();
-    if (entryTime < startTime || entryTime > now) continue;
-    const idx = Math.min(Math.floor((entryTime - startTime) / bucketMs), bucketCount - 1);
+    const entryTime = toMillis(entry?.timestamp);
+    if (entryTime === null) continue;
+    if (entryTime < startTime || entryTime > endTime) continue;
+    const idx = Math.min(Math.floor((entryTime - startTime) / effectiveBucketMs), bucketCount - 1);
     const rawPrompt = entry.tokens?.prompt_tokens || 0;
     const completionTokens = entry.tokens?.completion_tokens || 0;
     const cacheRead = entry.tokens?.cache_read_input_tokens || entry.tokens?.cached_tokens || 0;
@@ -851,7 +933,7 @@ export async function getChartData(period = "7d") {
     buckets[idx].cost += entry.cost || 0;
   }
 
-  return buckets.map(({ label, tokens, cost }) => ({ label, tokens, cost }));
+  return buckets;
 }
 
 // Re-export request details functions from new SQLite-based module

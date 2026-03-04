@@ -9,6 +9,13 @@ import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/Overview
 import UsageTable, { fmt, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
 import ProviderTopology from "@/app/(dashboard)/dashboard/usage/components/ProviderTopology";
 import UsageChart from "@/app/(dashboard)/dashboard/usage/components/UsageChart";
+import {
+  USAGE_PRESETS,
+  DEFAULT_USAGE_PRESET,
+  normalizeUsagePreset,
+  getUsageRange,
+  buildUsageQuery,
+} from "@/shared/utils/usagePeriod";
 
 function timeAgo(timestamp) {
   const diff = Math.floor((Date.now() - new Date(timestamp)) / 1000);
@@ -164,12 +171,23 @@ const TABLE_OPTIONS = [
   { value: "endpoint", label: "Usage by Endpoint" },
 ];
 
+const PERIOD_OPTIONS = {
+  today: "Today",
+  yesterday: "Yesterday",
+  "7d": "Last 7 days",
+  "30d": "Last 30 days",
+  all: "All time",
+};
+
 export default function UsageStats() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const sortBy = searchParams.get("sortBy") || "rawModel";
   const sortOrder = searchParams.get("sortOrder") || "asc";
+  const usagePreset = normalizeUsagePreset(searchParams.get("usagePreset") || DEFAULT_USAGE_PRESET);
+  const usageRange = useMemo(() => getUsageRange(usagePreset), [usagePreset]);
+  const usageQuery = useMemo(() => buildUsageQuery(usageRange), [usageRange]);
 
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -196,7 +214,7 @@ export default function UsageStats() {
   // SSE connection - no polling, event-driven
   useEffect(() => {
     console.log("[SSE CLIENT] connecting...");
-    const es = new EventSource("/api/usage/stream");
+    const es = new EventSource(`/api/usage/stream?${usageQuery}`);
 
     es.onopen = () => console.log("[SSE CLIENT] connected ✓");
 
@@ -220,7 +238,7 @@ export default function UsageStats() {
       console.log("[SSE CLIENT] closing");
       es.close();
     };
-  }, []);
+  }, [usageQuery]);
 
   const toggleSort = useCallback((tableType, field) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -230,6 +248,13 @@ export default function UsageStats() {
       params.set("sortBy", field);
       params.set("sortOrder", "asc");
     }
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }, [searchParams, router]);
+
+  const handlePeriodChange = useCallback((preset) => {
+    const nextPreset = normalizeUsagePreset(preset);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("usagePreset", nextPreset);
     router.replace(`?${params.toString()}`, { scroll: false });
   }, [searchParams, router]);
 
@@ -355,6 +380,20 @@ export default function UsageStats() {
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-end">
+        <select
+          value={usagePreset}
+          onChange={(e) => handlePeriodChange(e.target.value)}
+          className="px-3 py-1.5 rounded-lg border border-border bg-bg-subtle text-sm font-medium text-text focus:outline-none focus:ring-2 focus:ring-primary/50"
+        >
+          {USAGE_PRESETS.map((preset) => (
+            <option key={preset} value={preset}>
+              {PERIOD_OPTIONS[preset]}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* Overview cards */}
       <OverviewCards stats={stats} />
 
@@ -370,7 +409,7 @@ export default function UsageStats() {
       </div>
 
       {/* Token / Cost chart */}
-      <UsageChart />
+      <UsageChart usageRange={usageRange} />
 
       {/* Table with dropdown selector */}
       <div className="flex flex-col gap-3">

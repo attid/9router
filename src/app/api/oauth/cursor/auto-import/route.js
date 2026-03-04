@@ -134,25 +134,43 @@ async function extractTokensViaCLI(dbPath) {
 export async function GET() {
   try {
     const platform = process.platform;
+    if (!["darwin", "linux", "win32"].includes(platform)) {
+      return NextResponse.json({ found: false, error: "Unsupported platform" }, { status: 400 });
+    }
+
     const candidates = getCandidatePaths(platform);
 
     let dbPath = null;
-    for (const candidate of candidates) {
-      try {
-        await access(candidate, constants.R_OK);
-        dbPath = candidate;
-        break;
-      } catch {
-        // Try next candidate
+    if (platform === "darwin") {
+      for (const candidate of candidates) {
+        try {
+          await access(candidate, constants.R_OK);
+          dbPath = candidate;
+          break;
+        } catch {
+          // Try next candidate
+        }
       }
+    } else {
+      // Keep legacy behavior for linux/win32: single hardcoded path, no probing.
+      dbPath = candidates[0];
+    }
+
+    if (!dbPath && platform === "darwin") {
+      return NextResponse.json({
+        found: false,
+        error: `Cursor database not found in known macOS locations.\nChecked locations:\n${candidates.join("\n")}`,
+      });
     }
 
     if (!dbPath) {
       return NextResponse.json({
         found: false,
-        error: `Cursor database not found. Checked locations:\n${candidates.join("\n")}\n\nMake sure Cursor IDE is installed and opened at least once.`,
+        error: "Cursor database not found. Make sure Cursor IDE is installed and you are logged in.",
       });
     }
+
+    const genericLegacyError = "Cursor database not found. Make sure Cursor IDE is installed and you are logged in.";
 
     // Strategy 1: better-sqlite3 bundled → then global install fallback
     let Database = null;
@@ -178,8 +196,24 @@ export async function GET() {
         if (tokens.accessToken && tokens.machineId) {
           return NextResponse.json({ found: true, accessToken: tokens.accessToken, machineId: tokens.machineId });
         }
-      } catch {
+
+        if (platform === "darwin") {
+          return NextResponse.json({
+            found: false,
+            error: "Please login to Cursor IDE first (could not find access token and machine ID).",
+          });
+        }
+
+        return NextResponse.json({ found: false, error: genericLegacyError });
+      } catch (error) {
         db?.close();
+        if (platform === "darwin") {
+          return NextResponse.json({
+            found: false,
+            error: `Cursor database found but could not open it: ${error?.message || String(error)}`,
+          });
+        }
+        return NextResponse.json({ found: false, error: genericLegacyError });
       }
     }
 
@@ -192,7 +226,14 @@ export async function GET() {
     } catch { /* sqlite3 CLI not available */ }
 
     // Strategy 3: ask user to paste manually
-    return NextResponse.json({ found: false, windowsManual: true, dbPath });
+    if (platform === "darwin") {
+      return NextResponse.json({
+        found: false,
+        error: "Please login to Cursor IDE first (could not find access token and machine ID).",
+      });
+    }
+
+    return NextResponse.json({ found: false, error: genericLegacyError });
   } catch (error) {
     console.log("Cursor auto-import error:", error);
     return NextResponse.json({ found: false, error: error.message }, { status: 500 });

@@ -1,8 +1,34 @@
 import { getUsageStats, statsEmitter, getActiveRequests } from "@/lib/usageDb";
+import { normalizeUsagePreset, getUsageRange, rangeIncludesNow } from "@/shared/utils/usagePeriod";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+function buildUsageFilter(searchParams) {
+  const rawPreset = searchParams.get("preset");
+  const start = searchParams.get("start");
+  const end = searchParams.get("end");
+
+  if (rawPreset) {
+    return { preset: normalizeUsagePreset(rawPreset) };
+  }
+
+  if (start || end) {
+    return { start: start || null, end: end || null };
+  }
+
+  return {};
+}
+
+function includesLiveData(filter) {
+  if (filter?.preset) {
+    return rangeIncludesNow(getUsageRange(filter.preset, new Date()), new Date());
+  }
+  return rangeIncludesNow(filter, new Date());
+}
+
+export async function GET(request) {
+  const { searchParams } = new URL(request.url);
+  const filter = buildUsageFilter(searchParams);
   const encoder = new TextEncoder();
   const state = { closed: false, keepalive: null, send: null, sendPending: null, cachedStats: null };
 
@@ -13,13 +39,13 @@ export async function GET() {
         if (state.closed) return;
         try {
           // Push lightweight update immediately so UI reflects changes fast
-          if (state.cachedStats) {
-            const { activeRequests, recentRequests, errorProvider } = await getActiveRequests();
+          if (state.cachedStats && includesLiveData(filter)) {
+            const { activeRequests, recentRequests, errorProvider } = await getActiveRequests(filter);
             const quickStats = { ...state.cachedStats, activeRequests, recentRequests, errorProvider };
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(quickStats)}\n\n`));
           }
           // Then do full recalc and update cache
-          const stats = await getUsageStats();
+          const stats = await getUsageStats(filter);
           state.cachedStats = stats;
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
         } catch {
@@ -32,9 +58,9 @@ export async function GET() {
 
       // Lightweight push: only refresh activeRequests + recentRequests on pending changes
       state.sendPending = async () => {
-        if (state.closed || !state.cachedStats) return;
+        if (state.closed || !state.cachedStats || !includesLiveData(filter)) return;
         try {
-          const { activeRequests, recentRequests, errorProvider } = await getActiveRequests();
+          const { activeRequests, recentRequests, errorProvider } = await getActiveRequests(filter);
           const stats = { ...state.cachedStats, activeRequests, recentRequests, errorProvider };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
         } catch {
