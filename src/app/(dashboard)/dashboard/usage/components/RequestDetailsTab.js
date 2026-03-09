@@ -115,6 +115,9 @@ export default function RequestDetailsTab() {
   const [loading, setLoading] = useState(false);
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [streamTrace, setStreamTrace] = useState(null);
+  const [streamTraceLoading, setStreamTraceLoading] = useState(false);
+  const [streamTraceError, setStreamTraceError] = useState("");
   const [providers, setProviders] = useState([]);
   const [providerNameCache, setProviderNameCache] = useState(null);
   const [keyNameMap, setKeyNameMap] = useState(null);
@@ -173,8 +176,29 @@ export default function RequestDetailsTab() {
 
   const handleViewDetail = (detail) => {
     setSelectedDetail(detail);
+    setStreamTrace(null);
+    setStreamTraceError("");
     setIsDrawerOpen(true);
   };
+
+  const handleDecodeStream = useCallback(async () => {
+    if (!selectedDetail?.id) return;
+
+    setStreamTraceLoading(true);
+    setStreamTraceError("");
+    try {
+      const res = await fetch(`/api/usage/request-details/${selectedDetail.id}/stream-trace`);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to decode stream trace");
+      }
+      setStreamTrace(data);
+    } catch (error) {
+      setStreamTraceError(error.message || "Failed to decode stream trace");
+    } finally {
+      setStreamTraceLoading(false);
+    }
+  }, [selectedDetail]);
 
   const handlePageChange = (newPage) => {
     setPagination(prev => ({ ...prev, page: newPage }));
@@ -357,7 +381,11 @@ export default function RequestDetailsTab() {
 
       <Drawer
         isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
+        onClose={() => {
+          setIsDrawerOpen(false);
+          setStreamTrace(null);
+          setStreamTraceError("");
+        }}
         title="Request Details"
         width="lg"
       >
@@ -501,6 +529,114 @@ export default function RequestDetailsTab() {
                   {selectedDetail.response?.content || "[No content]"}
                 </pre>
               </CollapsibleSection>
+
+              {(selectedDetail.response?.meta?.raw_sse_b64 || selectedDetail.response?.meta?.raw_sse_tail_b64) && (
+                <CollapsibleSection title="5. Stream Trace (On Demand)" icon="network_node">
+                  <div className="flex flex-col gap-4">
+                    {!streamTrace && (
+                      <div className="flex items-center gap-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          icon="bug_report"
+                          onClick={handleDecodeStream}
+                          loading={streamTraceLoading}
+                        >
+                          Decode Stream
+                        </Button>
+                        <p className="text-xs text-text-muted">
+                          Decodes stored raw SSE only when explicitly requested.
+                        </p>
+                      </div>
+                    )}
+
+                    {streamTraceError && (
+                      <p className="text-sm text-red-600">{streamTraceError}</p>
+                    )}
+
+                    {streamTrace && (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-3 gap-3 text-sm">
+                          <div className="rounded-lg border border-black/5 dark:border-white/5 p-3">
+                            <div className="text-text-muted text-xs uppercase tracking-wide">Events</div>
+                            <div className="font-mono text-text-main">{streamTrace.events?.length || 0}</div>
+                          </div>
+                          <div className="rounded-lg border border-black/5 dark:border-white/5 p-3">
+                            <div className="text-text-muted text-xs uppercase tracking-wide">Tools</div>
+                            <div className="font-mono text-text-main">{streamTrace.tools?.length || 0}</div>
+                          </div>
+                          <div className="rounded-lg border border-black/5 dark:border-white/5 p-3">
+                            <div className="text-text-muted text-xs uppercase tracking-wide">Errors</div>
+                            <div className="font-mono text-text-main">{streamTrace.errors?.length || 0}</div>
+                          </div>
+                        </div>
+
+                        {streamTrace.errors?.length > 0 && (
+                          <div className="space-y-2">
+                            <h4 className="font-semibold text-text-main text-xs uppercase tracking-wide opacity-70">Errors</h4>
+                            <div className="space-y-2">
+                              {streamTrace.errors.map((error, index) => (
+                                <div key={`${error.type}-${index}`} className="rounded-lg border border-red-200/60 dark:border-red-900/60 bg-red-50/80 dark:bg-red-950/20 p-3">
+                                  <div className="font-mono text-xs text-red-700 dark:text-red-300">{error.type}</div>
+                                  <div className="text-sm text-red-800 dark:text-red-200">{error.message}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {streamTrace.tools?.length > 0 && (
+                          <div className="space-y-2">
+                            <h4 className="font-semibold text-text-main text-xs uppercase tracking-wide opacity-70">Tools</h4>
+                            <div className="space-y-2">
+                              {streamTrace.tools.map((tool, index) => (
+                                <div key={`${tool.id || tool.name}-${index}`} className="rounded-lg border border-black/5 dark:border-white/5 p-3">
+                                  <div className="text-sm font-medium text-text-main">{tool.name}</div>
+                                  {tool.id && <div className="text-xs font-mono text-text-muted">{tool.id}</div>}
+                                  <pre className="mt-2 bg-black/5 dark:bg-white/5 p-3 rounded-lg overflow-auto max-h-[200px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5 select-all">
+                                    {JSON.stringify(tool.input, null, 2)}
+                                  </pre>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="space-y-2">
+                          <h4 className="font-semibold text-text-main text-xs uppercase tracking-wide opacity-70">Event Timeline</h4>
+                          <div className="space-y-2">
+                            {streamTrace.events?.map((event) => (
+                              <div key={`${event.index}-${event.event}`} className="rounded-lg border border-black/5 dark:border-white/5 p-3">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="font-mono text-xs text-text-main">{event.event}</span>
+                                  <span className="text-xs text-text-muted">#{event.index + 1}</span>
+                                </div>
+                                <div className="mt-1 text-sm text-text-muted break-words">{event.summary || event.event}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {streamTrace.rawProviderSse && (
+                          <CollapsibleSection title="Raw Provider SSE" icon="data_object">
+                            <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5 select-all">
+                              {streamTrace.rawProviderSse}
+                            </pre>
+                          </CollapsibleSection>
+                        )}
+
+                        {streamTrace.rawClientSse && (
+                          <CollapsibleSection title="Raw Client SSE Tail" icon="data_object">
+                            <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5 select-all">
+                              {streamTrace.rawClientSse}
+                            </pre>
+                          </CollapsibleSection>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </CollapsibleSection>
+              )}
             </div>
           </div>
         )}
