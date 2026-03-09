@@ -298,6 +298,10 @@ export default function ProfilePage() {
     }
   };
 
+  const handleDownloadRequestDetailsDatabase = () => {
+    window.location.href = "/api/settings/request-details-backup";
+  };
+
   const handleImportDatabase = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -385,6 +389,14 @@ export default function ProfilePage() {
                 loading={dbLoading}
               >
                 Download Backup
+              </Button>
+              <Button
+                variant="outline"
+                icon="database"
+                onClick={handleDownloadRequestDetailsDatabase}
+                disabled={dbLoading}
+              >
+                Download Request Logs DB
               </Button>
               <Button
                 variant="outline"
