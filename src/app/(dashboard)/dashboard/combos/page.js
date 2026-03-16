@@ -176,6 +176,11 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <code className="text-sm font-medium font-mono truncate">{combo.name}</code>
+              {combo.isFree && (
+                <span className="text-[10px] font-medium text-teal-600 dark:text-teal-400 bg-teal-500/10 px-1.5 py-0.5 rounded-full border border-teal-500/20 whitespace-nowrap">
+                  Unmetered
+                </span>
+              )}
               <button
                 onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
                 className="p-0.5 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
@@ -328,6 +333,7 @@ function ModelItem({ index, model, weight, isFirst, isLast, onEdit, onWeightChan
 function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
+  const [isFree, setIsFree] = useState(combo?.isFree || false);
   const [models, setModels] = useState(() => {
     if (!combo?.models) return [];
     return combo.models.map(m =>
@@ -407,7 +413,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
-    await onSave({ name: name.trim(), models });
+    await onSave({ name: name.trim(), models, isFree });
     setSaving(false);
   };
 
@@ -478,8 +484,25 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
             </button>
           </div>
 
+          {/* Unmetered Toggle */}
+          <label className="flex items-center gap-3 p-3 mt-1 border border-black/10 dark:border-white/10 rounded-lg bg-black/[0.02] dark:bg-white/[0.02] cursor-pointer hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors">
+            <div className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input 
+                type="checkbox" 
+                className="sr-only peer" 
+                checked={isFree} 
+                onChange={(e) => setIsFree(e.target.checked)} 
+              />
+              <div className="w-9 h-5 bg-black/20 dark:bg-white/20 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-sm font-medium text-text-main">Unmetered Combo</span>
+              <span className="text-xs text-text-muted">Bypass API key token limits. Usage will still be logged but won't be deducted from user limits.</span>
+            </div>
+          </label>
+
           {/* Actions */}
-          <div className="flex gap-2 pt-1">
+          <div className="flex gap-2 pt-2">
             <Button onClick={onClose} variant="ghost" fullWidth size="sm">
               Cancel
             </Button>

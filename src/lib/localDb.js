@@ -598,21 +598,21 @@ export async function getComboByName(name) {
 export async function createCombo(data) {
   const db = await getDb();
   if (!db.data.combos) db.data.combos = [];
-  
+
   const now = new Date().toISOString();
   const combo = {
     id: uuidv4(),
     name: data.name,
     models: normalizeComboModels(data.models),
+    isFree: Boolean(data.isFree),
     createdAt: now,
     updatedAt: now,
   };
-  
+
   db.data.combos.push(combo);
   await db.write();
   return combo;
 }
-
 /**
  * Update combo
  */

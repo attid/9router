@@ -7,7 +7,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings, getApiKeyByValue } from "@/lib/localDb";
+import { getSettings, getApiKeyByValue, getCombos } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -79,25 +79,37 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Check API key token limits
   if (apiKey) {
-    const limitCheck = await checkKeyLimits(apiKey);
-    if (!limitCheck.allowed) {
-      log.warn("AUTH", `Token limit exceeded for key ${log.maskKey(apiKey)}`);
-      return new Response(
-        JSON.stringify({
-          error: {
-            message: limitCheck.error,
-            type: "rate_limit_error",
-            code: "token_limit_exceeded",
-          },
-        }),
-        {
-          status: HTTP_STATUS.RATE_LIMITED,
-          headers: {
-            "Content-Type": "application/json",
-            ...(limitCheck.retryAfter ? { "Retry-After": String(limitCheck.retryAfter) } : {}),
-          },
-        }
-      );
+    let isFreeCombo = false;
+    const combosData = await getCombos();
+    const matchingCombo = combosData.find(c => c.name === modelStr);
+    
+    if (matchingCombo?.isFree) {
+      isFreeCombo = true;
+      if (clientRawRequest) clientRawRequest.isFreeCombo = true;
+      log.debug("CHAT", `Combo "${modelStr}" is unmetered (bypassing limits)`);
+    }
+
+    if (!isFreeCombo) {
+      const limitCheck = await checkKeyLimits(apiKey);
+      if (!limitCheck.allowed) {
+        log.warn("AUTH", `Token limit exceeded for key ${log.maskKey(apiKey)}`);
+        return new Response(
+          JSON.stringify({
+            error: {
+              message: limitCheck.error,
+              type: "rate_limit_error",
+              code: "token_limit_exceeded",
+            },
+          }),
+          {
+            status: HTTP_STATUS.RATE_LIMITED,
+            headers: {
+              "Content-Type": "application/json",
+              ...(limitCheck.retryAfter ? { "Retry-After": String(limitCheck.retryAfter) } : {}),
+            },
+          }
+        );
+      }
     }
   }
 

@@ -19,7 +19,7 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { name, models } = body;
+    const { name, models, isFree } = body;
 
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -52,7 +52,7 @@ export async function POST(request) {
       }
     }
 
-    const combo = await createCombo({ name, models: models || [] });
+    const combo = await createCombo({ name, models: models || [], isFree: Boolean(isFree) });
 
     return NextResponse.json(combo, { status: 201 });
   } catch (error) {

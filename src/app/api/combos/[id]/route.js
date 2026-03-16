@@ -28,19 +28,19 @@ export async function PUT(request, { params }) {
     const body = await request.json();
     
     // Validate name format if provided
+    const body = await request.json();
+
     if (body.name) {
       if (!VALID_NAME_REGEX.test(body.name)) {
         return NextResponse.json({ error: "Name can only contain letters, numbers, - and _" }, { status: 400 });
       }
-      
-      // Check if name already exists (exclude current combo)
+
       const existing = await getComboByName(body.name);
       if (existing && existing.id !== id) {
         return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
       }
     }
 
-    // Validate models if provided
     if (body.models && Array.isArray(body.models)) {
       for (const entry of body.models) {
         if (typeof entry === "object" && entry !== null) {
@@ -54,6 +54,10 @@ export async function PUT(request, { params }) {
           return NextResponse.json({ error: "Models must be strings or {model, weight} objects" }, { status: 400 });
         }
       }
+    }
+
+    if ('isFree' in body) {
+      body.isFree = Boolean(body.isFree);
     }
 
     const combo = await updateCombo(id, body);

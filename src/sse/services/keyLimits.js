@@ -92,6 +92,7 @@ async function ensureCounters(apiKeyValue) {
 
 // Increment counters when new usage is saved
 statsEmitter.on("update", (usageEntry) => {
+  if (usageEntry?.unmetered) return;
   if (!usageEntry?.apiKey) return;
   const entry = counters.get(usageEntry.apiKey);
   if (!entry) return; // key not tracked yet, will load on next check
