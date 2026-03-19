@@ -28,8 +28,6 @@ export async function PUT(request, { params }) {
     const body = await request.json();
     
     // Validate name format if provided
-    const body = await request.json();
-
     if (body.name) {
       if (!VALID_NAME_REGEX.test(body.name)) {
         return NextResponse.json({ error: "Name can only contain letters, numbers, - and _" }, { status: 400 });
