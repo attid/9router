@@ -3,6 +3,35 @@ import { getProviderConnections, createProviderConnection, getProviderNodeById, 
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
+function decodeJwtPayload(token) {
+  if (!token) return null;
+
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function toSafeConnection(connection, name = connection.name) {
+  return {
+    ...connection,
+    name,
+    tokenInfo: {
+      accessTokenExpiresAt: connection.expiresAt || null,
+      idTokenClaims: decodeJwtPayload(connection.idToken),
+      hasRefreshToken: !!connection.refreshToken,
+      authType: connection.authType,
+    },
+    apiKey: undefined,
+    accessToken: undefined,
+    refreshToken: undefined,
+    idToken: undefined,
+  };
+}
+
 // GET /api/providers - List all connections
 export async function GET() {
   try {
@@ -23,14 +52,7 @@ export async function GET() {
       const name = isCompatible
         ? (nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
         : c.name;
-      return {
-        ...c,
-        name,
-        apiKey: undefined,
-        accessToken: undefined,
-        refreshToken: undefined,
-        idToken: undefined,
-      };
+      return toSafeConnection(c, name);
     });
 
     return NextResponse.json({ connections: safeConnections });

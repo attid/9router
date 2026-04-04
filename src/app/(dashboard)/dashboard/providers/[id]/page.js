@@ -10,6 +10,8 @@ import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, getProviderAlias, is
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { buildHiddenModelsMap, computeHiddenFromVisible } from "@/shared/utils/modelVisibility";
+import { useNotificationStore } from "@/store/notificationStore";
+import { formatAccessTokenExpiry, formatSessionExpiry, getRefreshTokenStatus } from "./tokenInfo";
 
 export default function ProviderDetailPage() {
   const params = useParams();
@@ -31,7 +33,9 @@ export default function ProviderDetailPage() {
   const [hiddenModels, setHiddenModels] = useState({});
   const [showHiddenModels, setShowHiddenModels] = useState(false);
   const [showManageModels, setShowManageModels] = useState(false);
+  const [refreshingConnectionId, setRefreshingConnectionId] = useState(null);
   const { copied, copy } = useCopyToClipboard();
+  const notify = useNotificationStore();
 
   const providerInfo = providerNode
     ? {
@@ -236,6 +240,29 @@ export default function ProviderDetailPage() {
       }
     } catch (error) {
       console.log("Error updating connection status:", error);
+    }
+  };
+
+  const handleRefreshConnection = async (id) => {
+    if (refreshingConnectionId) return;
+
+    setRefreshingConnectionId(id);
+    try {
+      const res = await fetch(`/api/providers/${id}/refresh`, { method: "POST" });
+      const data = await res.json();
+
+      if (!res.ok) {
+        notify.error(data.details ? `${data.error} — ${data.details}` : (data.error || "Failed to refresh token"));
+        return;
+      }
+
+      setConnections((prev) => prev.map((conn) => conn.id === id ? data.connection : conn));
+      notify.success("Token refreshed successfully");
+    } catch (error) {
+      console.log("Error refreshing connection:", error);
+      notify.error(error?.message || "Failed to refresh token");
+    } finally {
+      setRefreshingConnectionId(null);
     }
   };
 
@@ -593,9 +620,11 @@ export default function ProviderDetailPage() {
                 isOAuth={isOAuth}
                 isFirst={index === 0}
                 isLast={index === connections.length - 1}
+                isRefreshing={refreshingConnectionId === conn.id}
                 onMoveUp={() => handleSwapPriority(conn, connections[index - 1])}
                 onMoveDown={() => handleSwapPriority(conn, connections[index + 1])}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
+                onRefresh={() => handleRefreshConnection(conn.id)}
                 onEdit={() => {
                   setSelectedConnection(conn);
                   setShowEditModal(true);
@@ -1243,7 +1272,7 @@ CooldownTimer.propTypes = {
   until: PropTypes.string.isRequired,
 };
 
-function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onEdit, onDelete }) {
+function ConnectionRow({ connection, isOAuth, isFirst, isLast, isRefreshing, onMoveUp, onMoveDown, onToggleActive, onRefresh, onEdit, onDelete }) {
   const displayName = isOAuth
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
     : connection.name;
@@ -1273,7 +1302,7 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [modelLockUntil]);
+  }, [connection, modelLockUntil]);
 
   // Determine effective status (override unavailable if cooldown expired)
   const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
@@ -1286,6 +1315,10 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
     if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable") return "error";
     return "default";
   };
+
+  const accessExpiryText = formatAccessTokenExpiry(connection.tokenInfo?.accessTokenExpiresAt);
+  const sessionExpiryText = formatSessionExpiry(connection.tokenInfo?.idTokenClaims);
+  const refreshStatus = getRefreshTokenStatus(connection.tokenInfo);
 
   return (
     <div className={`group flex items-center justify-between p-3 rounded-lg hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${connection.isActive === false ? "opacity-60" : ""}`}>
@@ -1327,9 +1360,34 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
               <span className="text-xs text-text-muted">Auto: {connection.globalPriority}</span>
             )}
           </div>
+          {isOAuth && connection.tokenInfo && (
+            <div className="flex flex-col gap-1 mt-2 text-xs text-text-muted">
+              <div>Access token: {accessExpiryText}</div>
+              {sessionExpiryText && <div>Session expires {sessionExpiryText}</div>}
+              <div className="flex items-center gap-1.5">
+                <span className={`inline-block w-2 h-2 rounded-full ${refreshStatus.tone === "success" ? "bg-green-500" : "bg-red-500"}`} />
+                <span>{refreshStatus.label}</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {isOAuth && (
+          <button
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Refresh token now"
+          >
+            <span
+              className="material-symbols-outlined text-[18px]"
+              style={isRefreshing ? { animation: "spin 1s linear infinite" } : undefined}
+            >
+              {isRefreshing ? "progress_activity" : "refresh"}
+            </span>
+          </button>
+        )}
         <Toggle
           size="sm"
           checked={connection.isActive ?? true}
@@ -1365,9 +1423,11 @@ ConnectionRow.propTypes = {
   isOAuth: PropTypes.bool.isRequired,
   isFirst: PropTypes.bool.isRequired,
   isLast: PropTypes.bool.isRequired,
+  isRefreshing: PropTypes.bool,
   onMoveUp: PropTypes.func.isRequired,
   onMoveDown: PropTypes.func.isRequired,
   onToggleActive: PropTypes.func.isRequired,
+  onRefresh: PropTypes.func,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
 };

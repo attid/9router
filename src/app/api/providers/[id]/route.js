@@ -1,6 +1,34 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById, updateProviderConnection, deleteProviderConnection } from "@/models";
 
+function decodeJwtPayload(token) {
+  if (!token) return null;
+
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function toSafeConnection(connection) {
+  return {
+    ...connection,
+    tokenInfo: {
+      accessTokenExpiresAt: connection.expiresAt || null,
+      idTokenClaims: decodeJwtPayload(connection.idToken),
+      hasRefreshToken: !!connection.refreshToken,
+      authType: connection.authType,
+    },
+    apiKey: undefined,
+    accessToken: undefined,
+    refreshToken: undefined,
+    idToken: undefined,
+  };
+}
+
 // GET /api/providers/[id] - Get single connection
 export async function GET(request, { params }) {
   try {
@@ -11,14 +39,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
-    // Hide sensitive fields
-    const result = { ...connection };
-    delete result.apiKey;
-    delete result.accessToken;
-    delete result.refreshToken;
-    delete result.idToken;
-
-    return NextResponse.json({ connection: result });
+    return NextResponse.json({ connection: toSafeConnection(connection) });
   } catch (error) {
     console.log("Error fetching connection:", error);
     return NextResponse.json({ error: "Failed to fetch connection" }, { status: 500 });
@@ -67,14 +88,7 @@ export async function PUT(request, { params }) {
 
     const updated = await updateProviderConnection(id, updateData);
 
-    // Hide sensitive fields
-    const result = { ...updated };
-    delete result.apiKey;
-    delete result.accessToken;
-    delete result.refreshToken;
-    delete result.idToken;
-
-    return NextResponse.json({ connection: result });
+    return NextResponse.json({ connection: toSafeConnection(updated) });
   } catch (error) {
     console.log("Error updating connection:", error);
     return NextResponse.json({ error: "Failed to update connection" }, { status: 500 });

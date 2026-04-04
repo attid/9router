@@ -86,6 +86,9 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // This handles hybrid requests (e.g., OpenAI messages + Claude tools)
   if (targetFormat === FORMATS.OPENAI) {
     result = filterToOpenAIFormat(result);
+    // Ensure upstream provider sees explicit stream flag — some clients rely on
+    // Accept: text/event-stream header only, which providers like z.ai ignore.
+    result.stream = stream;
   }
 
   // Final step: prepare request for Claude format endpoints

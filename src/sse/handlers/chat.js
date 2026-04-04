@@ -18,6 +18,8 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { checkKeyLimits } from "../services/keyLimits.js";
+import { saveRequestDetail } from "@/lib/usageDb.js";
+import { buildRequestDetail, extractRequestConfig } from "open-sse/handlers/chatCore/requestDetail.js";
 
 /**
  * Handle chat completion request
@@ -197,13 +199,46 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
+        
+        saveRequestDetail(buildRequestDetail({
+          provider, model, apiKeyId: apiKey,
+          latency: { ttft: 0, total: 0 },
+          tokens: { prompt_tokens: 0, completion_tokens: 0 },
+          request: extractRequestConfig(body, body.stream),
+          clientEndpoint: request?.url ? new URL(request.url).pathname : null,
+          response: { error: `[${provider}/${model}] ${errorMsg}`, status, thinking: null },
+          status: "error"
+        })).catch(() => {});
+
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
       if (!excludeConnectionId) {
         log.error("AUTH", `No credentials for provider: ${provider}`);
+        
+        saveRequestDetail(buildRequestDetail({
+          provider, model, apiKeyId: apiKey,
+          latency: { ttft: 0, total: 0 },
+          tokens: { prompt_tokens: 0, completion_tokens: 0 },
+          request: extractRequestConfig(body, body.stream),
+          clientEndpoint: request?.url ? new URL(request.url).pathname : null,
+          response: { error: `No credentials for provider: ${provider}`, status: HTTP_STATUS.BAD_REQUEST, thinking: null },
+          status: "error"
+        })).catch(() => {});
+
         return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
       }
       log.warn("CHAT", "No more accounts available", { provider });
+      
+      saveRequestDetail(buildRequestDetail({
+        provider, model, apiKeyId: apiKey,
+        latency: { ttft: 0, total: 0 },
+        tokens: { prompt_tokens: 0, completion_tokens: 0 },
+        request: extractRequestConfig(body, body.stream),
+        clientEndpoint: request?.url ? new URL(request.url).pathname : null,
+        response: { error: lastError || "All accounts unavailable", status: lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, thinking: null },
+        status: "error"
+      })).catch(() => {});
+
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
     }
 
