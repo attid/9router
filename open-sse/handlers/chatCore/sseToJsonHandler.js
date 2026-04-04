@@ -25,6 +25,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   const first = chunks[0];
   const contentParts = [];
   const reasoningParts = [];
+  const toolCallMap = new Map();
   let finishReason = "stop";
   let usage = null;
 
@@ -33,12 +34,25 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
     const delta = choice?.delta || {};
     if (typeof delta.content === "string" && delta.content.length > 0) contentParts.push(delta.content);
     if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) reasoningParts.push(delta.reasoning_content);
+    if (delta.tool_calls) {
+      for (const tc of delta.tool_calls) {
+        const idx = tc.index ?? 0;
+        if (!toolCallMap.has(idx)) {
+          toolCallMap.set(idx, { id: tc.id || "", type: "function", function: { name: tc.function?.name || "", arguments: "" } });
+        }
+        const existing = toolCallMap.get(idx);
+        if (tc.id) existing.id = tc.id;
+        if (tc.function?.name) existing.function.name = tc.function.name;
+        if (tc.function?.arguments) existing.function.arguments += tc.function.arguments;
+      }
+    }
     if (choice?.finish_reason) finishReason = choice.finish_reason;
     if (chunk?.usage && typeof chunk.usage === "object") usage = chunk.usage;
   }
 
   const message = { role: "assistant", content: contentParts.join("") };
   if (reasoningParts.length > 0) message.reasoning_content = reasoningParts.join("");
+  if (toolCallMap.size > 0) message.tool_calls = [...toolCallMap.values()];
 
   const result = {
     id: first.id || `chatcmpl-${Date.now()}`,
@@ -83,6 +97,12 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
 
       const msgItem = jsonResponse.output?.find(item => item.type === "message");
       const textContent = msgItem?.content?.find(c => c.type === "output_text")?.text || msgItem?.content?.[0]?.text || null;
+      const funcItems = jsonResponse.output?.filter(item => item.type === "function_call") || [];
+      const toolCalls = funcItems.map(item => ({
+        id: item.call_id || `call_${Date.now()}`,
+        type: "function",
+        function: { name: item.name || "", arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {}) }
+      }));
       const totalLatency = Date.now() - requestStartTime;
 
       saveRequestDetail(buildRequestDetail({
@@ -104,21 +124,31 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       let finalResp;
 
       if (sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI) {
+        const parts = [];
+        if (textContent) parts.push({ text: textContent });
+        for (const tc of toolCalls) {
+          parts.push({ functionCall: { name: tc.function.name, args: JSON.parse(tc.function.arguments || "{}") } });
+        }
+        if (parts.length === 0) parts.push({ text: "" });
         finalResp = {
           response: {
-            candidates: [{ content: { role: "model", parts: [{ text: textContent || "" }] }, finishReason: "STOP", index: 0 }],
+            candidates: [{ content: { role: "model", parts }, finishReason: "STOP", index: 0 }],
             usageMetadata: { promptTokenCount: inTokens, candidatesTokenCount: outTokens, totalTokenCount: inTokens + outTokens },
             modelVersion: model,
             responseId: jsonResponse.id || `resp_${Date.now()}`
           }
         };
       } else {
+        const message = { role: "assistant", content: textContent || "" };
+        if (toolCalls.length > 0) message.tool_calls = toolCalls;
+        let finishReason = jsonResponse.status === "completed" ? "stop" : (jsonResponse.status || "stop");
+        if (finishReason === "stop" && toolCalls.length > 0) finishReason = "tool_calls";
         finalResp = {
           id: jsonResponse.id || `chatcmpl-${Date.now()}`,
           object: "chat.completion",
           created: jsonResponse.created_at || Math.floor(Date.now() / 1000),
           model: jsonResponse.model || model,
-          choices: [{ index: 0, message: { role: "assistant", content: textContent || "" }, finish_reason: jsonResponse.status === "completed" ? "stop" : (jsonResponse.status || "stop") }],
+          choices: [{ index: 0, message, finish_reason: finishReason }],
           usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens }
         };
       }
