@@ -12,6 +12,7 @@ const ALIAS_TO_PROVIDER_ID = {
   kc: "kilocode",
   kmc: "kimi-coding",
   cl: "cline",
+  oc: "opencode",
   // API Key providers
   openai: "openai",
   anthropic: "anthropic",
@@ -46,6 +47,10 @@ const ALIAS_TO_PROVIDER_ID = {
   ch: "chutes",
   chutes: "chutes",
   cursor: "cursor",
+  vx: "vertex",
+  vertex: "vertex",
+  vxp: "vertex-partner",
+  "vertex-partner": "vertex-partner",
 };
 
 /**

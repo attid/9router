@@ -1,7 +1,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { DEFAULT_THINKING_GEMINI_SIGNATURE } from "../../config/defaultThinkingSignature.js";
-import { ANTIGRAVITY_DEFAULT_SYSTEM } from "../../config/constants.js";
+import { DEFAULT_THINKING_AG_SIGNATURE, DEFAULT_THINKING_GEMINI_CLI_SIGNATURE } from "../../config/defaultThinkingSignature.js";
+import { ANTIGRAVITY_DEFAULT_SYSTEM } from "../../config/appConstants.js";
 import { openaiToClaudeRequestForAntigravity } from "./openai-to-claude.js";
 
 function generateUUID() {
@@ -20,8 +20,23 @@ import {
 } from "../helpers/geminiHelper.js";
 import { deriveSessionId } from "../../utils/sessionManager.js";
 
+// Sanitize function names for Gemini API.
+// Gemini requires: starts with [a-zA-Z_], followed by [a-zA-Z0-9_.:\-], max 64 chars.
+// Replace any invalid character with '_' and truncate to 64.
+function sanitizeGeminiFunctionName(name) {
+  if (!name) return "_unknown";
+  // Replace any char not in [a-zA-Z0-9_.:\-] with '_'
+  let sanitized = name.replace(/[^a-zA-Z0-9_.:\-]/g, "_");
+  // First char must be letter or underscore
+  if (!/^[a-zA-Z_]/.test(sanitized)) {
+    sanitized = "_" + sanitized;
+  }
+  // Truncate to 64 chars
+  return sanitized.substring(0, 64);
+}
+
 // Core: Convert OpenAI request to Gemini format (base for all variants)
-function openaiToGeminiBase(model, body, stream) {
+function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG_SIGNATURE) {
   const result = {
     model: model,
     contents: [],
@@ -94,7 +109,7 @@ function openaiToGeminiBase(model, body, stream) {
             text: msg.reasoning_content
           });
           parts.push({
-            thoughtSignature: DEFAULT_THINKING_GEMINI_SIGNATURE,
+            thoughtSignature: signature,
             text: ""
           });
         }
@@ -113,10 +128,10 @@ function openaiToGeminiBase(model, body, stream) {
 
             const args = tryParseJSON(tc.function?.arguments || "{}");
             parts.push({
-              thoughtSignature: DEFAULT_THINKING_GEMINI_SIGNATURE,
+              thoughtSignature: signature,
               functionCall: {
                 id: tc.id,
-                name: tc.function.name,
+                name: sanitizeGeminiFunctionName(tc.function.name),
                 args: args
               }
             });
@@ -156,7 +171,7 @@ function openaiToGeminiBase(model, body, stream) {
               toolParts.push({
                 functionResponse: {
                   id: fid,
-                  name: name,
+                  name: sanitizeGeminiFunctionName(name),
                   response: { result: parsedResp }
                 }
               });
@@ -178,19 +193,21 @@ function openaiToGeminiBase(model, body, stream) {
     for (const t of body.tools) {
       // Check if already in Anthropic/Claude format (no type field, direct name/description/input_schema)
       if (t.name && t.input_schema) {
+        const cleanedSchema = cleanJSONSchemaForAntigravity(structuredClone(t.input_schema || { type: "object", properties: {} }));
         functionDeclarations.push({
-          name: t.name,
+          name: sanitizeGeminiFunctionName(t.name),
           description: t.description || "",
-          parameters: t.input_schema || { type: "object", properties: {} }
+          parameters: cleanedSchema
         });
       }
       // OpenAI format
       else if (t.type === "function" && t.function) {
         const fn = t.function;
+        const cleanedSchema = cleanJSONSchemaForAntigravity(structuredClone(fn.parameters || { type: "object", properties: {} }));
         functionDeclarations.push({
-          name: fn.name,
+          name: sanitizeGeminiFunctionName(fn.name),
           description: fn.description || "",
-          parameters: fn.parameters || { type: "object", properties: {} }
+          parameters: cleanedSchema
         });
       }
     }
@@ -210,7 +227,7 @@ export function openaiToGeminiRequest(model, body, stream) {
 
 // OpenAI -> Gemini CLI (Cloud Code Assist)
 export function openaiToGeminiCLIRequest(model, body, stream) {
-  const gemini = openaiToGeminiBase(model, body, stream);
+  const gemini = openaiToGeminiBase(model, body, stream, DEFAULT_THINKING_GEMINI_CLI_SIGNATURE);
   const isClaude = model.toLowerCase().includes("claude");
 
   // Add thinking config for CLI
@@ -370,7 +387,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
       if (tool.name && tool.input_schema) {
         const cleanedSchema = cleanJSONSchemaForAntigravity(tool.input_schema);
         functionDeclarations.push({
-          name: tool.name,
+          name: sanitizeGeminiFunctionName(tool.name),
           description: tool.description || "",
           parameters: cleanedSchema
         });
@@ -411,11 +428,15 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
   return envelope;
 }
 
+// Detect if model should use Claude backend in Antigravity
+// Claude models have specific ID patterns — more reliable than caps at routing level
+function isClaudeModel(model) {
+  return model.toLowerCase().includes("claude");
+}
+
 // OpenAI -> Antigravity (Sandbox Cloud Code with wrapper)
 export function openaiToAntigravityRequest(model, body, stream, credentials = null) {
-  const isClaude = model.toLowerCase().includes("claude");
-
-  if (isClaude) {
+  if (isClaudeModel(model)) {
     const claudeRequest = openaiToClaudeRequestForAntigravity(model, body, stream);
     return wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials);
   }

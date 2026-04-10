@@ -1,9 +1,12 @@
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS, OAUTH_ENDPOINTS, HTTP_STATUS, GITHUB_COPILOT } from "../config/constants.js";
+import { PROVIDERS } from "../config/providers.js";
+import { OAUTH_ENDPOINTS, GITHUB_COPILOT } from "../config/appConstants.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { openaiToOpenAIResponsesRequest } from "../translator/request/openai-responses.js";
 import { openaiResponsesToOpenAIResponse } from "../translator/response/openai-responses.js";
 import { initState } from "../translator/index.js";
 import { parseSSELine, formatSSE } from "../utils/streamHelpers.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import crypto from "crypto";
 
 export class GithubExecutor extends BaseExecutor {
@@ -41,6 +44,36 @@ export class GithubExecutor extends BaseExecutor {
     if (!body?.messages) return body;
 
     const sanitized = { ...body };
+    
+    // Handle response_format for Claude models via GitHub
+    // GitHub's internal translation doesn't respect response_format, so we inject it as a system prompt
+    // AND prepend a reminder to the last user message for maximum effectiveness
+    if (body.response_format && body.model?.includes('claude')) {
+      const responseFormat = body.response_format;
+      let systemInstruction = '';
+      if (responseFormat.type === 'json_schema' && responseFormat.json_schema?.schema) {
+        systemInstruction = 'CRITICAL: You must ONLY output raw JSON. Never use markdown code blocks. Never use backticks. Never wrap JSON in triple backticks. Output ONLY the raw JSON object.';
+      } else if (responseFormat.type === 'json_object') {
+        systemInstruction = 'CRITICAL: You must ONLY output raw JSON. Never use markdown code blocks. Never use backticks.';
+      }
+      if (systemInstruction) {
+        // Add to system message
+        const systemIdx = body.messages.findIndex(m => m.role === 'system');
+        if (systemIdx >= 0) {
+          body.messages[systemIdx].content = systemInstruction + '\n\n' + body.messages[systemIdx].content;
+        } else {
+          body.messages.unshift({ role: 'system', content: systemInstruction });
+        }
+        
+        // Also prepend to the last user message as a reminder
+        const lastUserIdx = body.messages.map((m, i) => m.role === 'user' ? i : -1).filter(i => i >= 0).pop();
+        if (lastUserIdx >= 0) {
+          const userMsg = body.messages[lastUserIdx];
+          const userContent = typeof userMsg.content === 'string' ? userMsg.content : JSON.stringify(userMsg.content);
+          userMsg.content = 'Respond with ONLY raw JSON (no markdown, no backticks, no code blocks): ' + userContent;
+        }
+      }
+    }
     sanitized.messages = body.messages.map(msg => {
       // assistant messages with only tool_calls have content: null — leave as-is
       if (!msg.content) return msg;
@@ -86,12 +119,12 @@ export class GithubExecutor extends BaseExecutor {
       body: this.sanitizeMessagesForChatCompletions(options.body)
     };
 
-    const result = await super.execute(sanitizedOptions);
+    const result = await super.execute({ ...sanitizedOptions, proxyOptions: options.proxyOptions || null });
 
     if (result.response.status === HTTP_STATUS.BAD_REQUEST) {
       const errorBody = await result.response.clone().text();
 
-      if (errorBody.includes("not accessible via the /chat/completions endpoint")) {
+      if (errorBody.includes("not accessible via the /chat/completions endpoint") || errorBody.includes("The requested model is not supported")) {
         log?.warn("GITHUB", `Model ${model} requires /responses. Switching...`);
         this.knownCodexModels.add(model);
         return this.executeWithResponsesEndpoint(options);
@@ -101,7 +134,7 @@ export class GithubExecutor extends BaseExecutor {
     return result;
   }
 
-  async executeWithResponsesEndpoint({ model, body, stream, credentials, signal, log }) {
+  async executeWithResponsesEndpoint({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     const url = this.config.responsesUrl;
     const headers = this.buildHeaders(credentials, stream);
 
@@ -109,12 +142,12 @@ export class GithubExecutor extends BaseExecutor {
 
     log?.debug("GITHUB", "Sending translated request to /responses");
 
-    const response = await fetch(url, {
+    const response = await proxyAwareFetch(url, {
       method: "POST",
       headers,
       body: JSON.stringify(transformedBody),
       signal
-    });
+    }, proxyOptions);
 
     if (!response.ok) {
       return { response, url, headers, transformedBody };
@@ -140,7 +173,7 @@ export class GithubExecutor extends BaseExecutor {
           const parsed = parseSSELine(trimmed);
           if (!parsed) continue;
 
-          if (parsed.done) {
+          if (parsed.done && stream === true) {
             controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
             continue;
           }
@@ -165,6 +198,9 @@ export class GithubExecutor extends BaseExecutor {
       }
     });
 
+    if (!response.body) {
+      return { response: new Response("", { status: response.status, headers: response.headers }), url, headers, transformedBody };
+    }
     const convertedStream = response.body.pipeThrough(transformStream);
 
     return {
@@ -207,15 +243,19 @@ export class GithubExecutor extends BaseExecutor {
 
   async refreshGitHubToken(refreshToken, log) {
     try {
+      const params = {
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: this.config.clientId,
+      };
+      if (this.config.clientSecret) {
+        params.client_secret = this.config.clientSecret;
+      }
+
       const response = await fetch(OAUTH_ENDPOINTS.github.token, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
-        body: new URLSearchParams({
-          grant_type: "refresh_token",
-          refresh_token: refreshToken,
-          client_id: this.config.clientId,
-          client_secret: this.config.clientSecret
-        })
+        body: new URLSearchParams(params)
       });
       if (!response.ok) return null;
       const tokens = await response.json();

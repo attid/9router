@@ -1,6 +1,8 @@
 /**
  * Normalize Responses API input to array format.
  * Accepts string or array, returns array of message items.
+ * An empty array is treated like an empty string — providers require at least one user
+ * message, so we inject a placeholder rather than forwarding an empty messages[].
  * @param {string|Array} input - raw input from Responses API body
  * @returns {Array|null} normalized array or null if invalid
  */
@@ -9,7 +11,13 @@ export function normalizeResponsesInput(input) {
     const text = input.trim() === "" ? "..." : input;
     return [{ type: "message", role: "user", content: [{ type: "input_text", text }] }];
   }
-  if (Array.isArray(input)) return input;
+  if (Array.isArray(input)) {
+    // Empty input[] would produce messages:[] which all providers reject (#389)
+    if (input.length === 0) {
+      return [{ type: "message", role: "user", content: [{ type: "input_text", text: "..." }] }];
+    }
+    return input;
+  }
   return null;
 }
 
@@ -56,14 +64,14 @@ export function convertResponsesApiFormat(body) {
         pendingToolResults = [];
       }
 
-      // Convert content: input_text → text, output_text → text
+      // Convert content: input_text → text, output_text → text, input_image → image_url
       const content = Array.isArray(item.content)
         ? item.content.map(c => {
           if (c.type === "input_text") return { type: "text", text: c.text };
           if (c.type === "output_text") return { type: "text", text: c.text };
           if (c.type === "input_image") {
-            const url = typeof c.image_url === "string" ? c.image_url : c.image_url?.url;
-            if (url) return { type: "image_url", image_url: { url } };
+            const url = c.image_url || c.file_id || "";
+            return { type: "image_url", image_url: { url, detail: c.detail || "auto" } };
           }
           return c;
         })
@@ -79,6 +87,8 @@ export function convertResponsesApiFormat(body) {
           tool_calls: []
         };
       }
+      // Skip items with empty/missing name — upstream APIs reject nameless tool calls (#444)
+      if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
       currentAssistantMsg.tool_calls.push({
         id: item.call_id,
         type: "function",

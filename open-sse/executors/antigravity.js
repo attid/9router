@@ -1,7 +1,10 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS, OAUTH_ENDPOINTS, HTTP_STATUS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER } from "../config/constants.js";
+import { PROVIDERS } from "../config/providers.js";
+import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX } from "../config/appConstants.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { deriveSessionId } from "../utils/sessionManager.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 const MAX_RETRY_AFTER_MS = 10000;
 
@@ -21,9 +24,8 @@ export class AntigravityExecutor extends BaseExecutor {
     return {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
-      "User-Agent": this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS['User-Agent'],
+      "User-Agent": this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS["User-Agent"],
       [INTERNAL_REQUEST_HEADER.name]: INTERNAL_REQUEST_HEADER.value,
-      ...ANTIGRAVITY_HEADERS,
       ...(sessionId && { "X-Machine-Session-Id": sessionId }),
       "Accept": stream ? "text/event-stream" : "application/json"
     };
@@ -161,12 +163,14 @@ export class AntigravityExecutor extends BaseExecutor {
     return totalMs > 0 ? totalMs : null;
   }
 
-  async execute({ model, body, stream, credentials, signal, log }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
     const MAX_AUTO_RETRIES = 3;
+    const MAX_RETRY_AFTER_RETRIES = 3;
     const retryAttemptsByUrl = {}; // Track retry attempts per URL
+    const retryAfterAttemptsByUrl = {}; // Track Retry-After retries per URL
 
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex);
@@ -174,18 +178,21 @@ export class AntigravityExecutor extends BaseExecutor {
       const sessionId = transformedBody.request?.sessionId;
       const headers = this.buildHeaders(credentials, stream, sessionId);
 
-      // Initialize retry counter for this URL
+      // Initialize retry counters for this URL
       if (!retryAttemptsByUrl[urlIndex]) {
         retryAttemptsByUrl[urlIndex] = 0;
       }
+      if (!retryAfterAttemptsByUrl[urlIndex]) {
+        retryAfterAttemptsByUrl[urlIndex] = 0;
+      }
 
       try {
-        const response = await fetch(url, {
+        const response = await proxyAwareFetch(url, {
           method: "POST",
           headers,
           body: JSON.stringify(transformedBody),
           signal
-        });
+        }, proxyOptions);
 
         if (response.status === HTTP_STATUS.RATE_LIMITED || response.status === HTTP_STATUS.SERVICE_UNAVAILABLE) {
           // Try to get retry time from headers first
@@ -203,8 +210,9 @@ export class AntigravityExecutor extends BaseExecutor {
             }
           }
 
-          if (retryMs && retryMs <= MAX_RETRY_AFTER_MS) {
-            log?.debug?.("RETRY", `${response.status} with Retry-After: ${Math.ceil(retryMs / 1000)}s, waiting...`);
+          if (retryMs && retryMs <= MAX_RETRY_AFTER_MS && retryAfterAttemptsByUrl[urlIndex] < MAX_RETRY_AFTER_RETRIES) {
+            retryAfterAttemptsByUrl[urlIndex]++;
+            log?.debug?.("RETRY", `${response.status} with Retry-After: ${Math.ceil(retryMs / 1000)}s, waiting... (${retryAfterAttemptsByUrl[urlIndex]}/${MAX_RETRY_AFTER_RETRIES})`);
             await new Promise(resolve => setTimeout(resolve, retryMs));
             urlIndex--;
             continue;
@@ -248,6 +256,197 @@ export class AntigravityExecutor extends BaseExecutor {
 
     throw lastError || new Error(`All ${fallbackCount} URLs failed with status ${lastStatus}`);
   }
+
+  /**
+   * Cloak tools before sending to Antigravity provider (anti-ban):
+   * - Rename client tools with _ide suffix
+   * - Inject AG default decoy tools after client tools
+   * Returns { cloakedBody, toolNameMap } where toolNameMap maps suffixed → original
+   */
+  static cloakTools(body) {
+    const tools = body.request?.tools;
+    if (!tools || tools.length === 0) {
+      return { cloakedBody: body, toolNameMap: null };
+    }
+
+    const toolNameMap = new Map();
+    const clientDeclarations = [];
+
+    // First: collect renamed client tools
+    for (const toolGroup of tools) {
+      if (!toolGroup.functionDeclarations) continue;
+
+      for (const func of toolGroup.functionDeclarations) {
+        // Skip if already an AG default tool name
+        if (AG_DEFAULT_TOOLS.has(func.name)) {
+          clientDeclarations.push(func);
+          continue;
+        }
+
+        const suffixed = `${func.name}${AG_TOOL_SUFFIX}`;
+        toolNameMap.set(suffixed, func.name);
+        clientDeclarations.push({ ...func, name: suffixed });
+      }
+    }
+
+    // Client tools first, then AG decoy tools
+    const allDeclarations = [...clientDeclarations, ...AG_DECOY_TOOLS];
+
+    // Rename tool names in conversation history (contents)
+    const cloakedContents = body.request?.contents?.map(msg => {
+      if (!msg.parts) return msg;
+      
+      const cloakedParts = msg.parts.map(part => {
+        // Rename functionCall.name
+        if (part.functionCall && !AG_DEFAULT_TOOLS.has(part.functionCall.name)) {
+          return {
+            ...part,
+            functionCall: {
+              ...part.functionCall,
+              name: `${part.functionCall.name}${AG_TOOL_SUFFIX}`
+            }
+          };
+        }
+        
+        // Rename functionResponse.name
+        if (part.functionResponse && !AG_DEFAULT_TOOLS.has(part.functionResponse.name)) {
+          return {
+            ...part,
+            functionResponse: {
+              ...part.functionResponse,
+              name: `${part.functionResponse.name}${AG_TOOL_SUFFIX}`
+            }
+          };
+        }
+        
+        return part;
+      });
+      
+      return { ...msg, parts: cloakedParts };
+    });
+
+    // Single functionDeclarations group: client tools first, then decoys
+    return {
+      cloakedBody: {
+        ...body,
+        request: {
+          ...body.request,
+          tools: [{ functionDeclarations: allDeclarations }],
+          contents: cloakedContents || body.request.contents
+        }
+      },
+      toolNameMap
+    };
+  }
 }
+
+// AG decoy tools — same names as AG native defaults, redirect to _ide suffixed tools
+const AG_DECOY_TOOLS = [
+  {
+    name: "browser_subagent",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "command_status",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "find_by_name",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "generate_image",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "grep_search",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "list_dir",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "list_resources",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "mcp_sequential-thinking_sequentialthinking",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "multi_replace_file_content",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "notify_user",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "read_resource",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "read_terminal",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "read_url_content",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "replace_file_content",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "run_command",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "search_web",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "send_command_input",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "task_boundary",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "view_content_chunk",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "view_file",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "write_to_file",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  }
+];
 
 export default AntigravityExecutor;

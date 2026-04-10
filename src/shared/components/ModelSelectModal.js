@@ -4,14 +4,18 @@ import { useState, useMemo, useEffect } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
-import { isModelHiddenForProvider } from "@/shared/utils/modelVisibility";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
-// Provider order: OAuth first, then API Key (matches dashboard/providers)
+// Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
   ...Object.keys(OAUTH_PROVIDERS),
+  ...Object.keys(FREE_PROVIDERS),
+  ...Object.keys(FREE_TIER_PROVIDERS),
   ...Object.keys(APIKEY_PROVIDERS),
 ];
+
+// Providers that need no auth — always show in model selector
+const NO_AUTH_PROVIDER_IDS = Object.keys(FREE_PROVIDERS).filter(id => FREE_PROVIDERS[id].noAuth);
 
 export default function ModelSelectModal({
   isOpen,
@@ -80,104 +84,19 @@ export default function ModelSelectModal({
     if (isOpen) fetchProviderNodes();
   }, [isOpen]);
 
-  const fetchHiddenModels = async () => {
-    try {
-      const res = await fetch("/api/settings");
-      if (!res.ok) throw new Error(`Failed to fetch settings: ${res.status}`);
-      const data = await res.json();
-      setHiddenModels(data.hiddenModels || {});
-    } catch (error) {
-      console.error("Error fetching hidden models:", error);
-      setHiddenModels({});
-    }
-  };
-
-  useEffect(() => {
-    if (isOpen) fetchHiddenModels();
-  }, [isOpen]);
-
-  const fetchDynamicModels = async () => {
-    try {
-      const activeConnections = (activeProviders || []).filter((c) => c?.id && c?.provider);
-      if (!activeConnections.length) {
-        setDynamicModelsByProvider({});
-        return;
-      }
-
-      const settled = await Promise.allSettled(
-        activeConnections.map(async (conn) => {
-          const res = await fetch(`/api/providers/${encodeURIComponent(conn.id)}/models`);
-          if (!res.ok) return { provider: conn.provider, models: [] };
-          const data = await res.json();
-          const normalized = (data.models || [])
-            .map((m) => {
-              if (typeof m === "string") return { id: m, name: m };
-              const id = m?.id || m?.model || m?.name;
-              if (!id) return null;
-              return { id, name: m?.name || m?.displayName || id };
-            })
-            .filter(Boolean);
-          return { provider: conn.provider, models: normalized };
-        })
-      );
-
-      const byProvider = {};
-      for (const r of settled) {
-        if (r.status !== "fulfilled") continue;
-        const providerId = r.value.provider;
-        if (!byProvider[providerId]) byProvider[providerId] = new Map();
-        for (const model of r.value.models) {
-          byProvider[providerId].set(model.id, model.name);
-        }
-      }
-
-      const finalMap = {};
-      Object.entries(byProvider).forEach(([providerId, modelsMap]) => {
-        finalMap[providerId] = [...modelsMap.entries()].map(([id, name]) => ({ id, name }));
-      });
-      setDynamicModelsByProvider(finalMap);
-    } catch (error) {
-      console.error("Error fetching dynamic provider models:", error);
-      setDynamicModelsByProvider({});
-    }
-  };
-
-  useEffect(() => {
-    if (isOpen) fetchDynamicModels();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, activeProviders]);
-
-  const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...APIKEY_PROVIDERS }), []);
+  const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);
 
   // Group models by provider with priority order
   const groupedModels = useMemo(() => {
     const groups = {};
 
-    const getAliasModelsForProvider = (providerId, alias) =>
-      Object.entries(modelAliases || {})
-        .filter(([, fullModel]) =>
-          typeof fullModel === "string" &&
-          (fullModel.startsWith(`${alias}/`) || fullModel.startsWith(`${providerId}/`))
-        )
-        .map(([aliasName, fullModel]) => {
-          const prefix = fullModel.startsWith(`${alias}/`) ? `${alias}/` : `${providerId}/`;
-          const modelId = fullModel.slice(prefix.length);
-          if (!modelId) return null;
-          const displayName = aliasName === fullModel ? modelId : aliasName;
-          return {
-            id: modelId,
-            name: displayName,
-            value: fullModel,
-          };
-        })
-        .filter(Boolean);
-    
     // Get all active provider IDs from connections
     const activeConnectionIds = activeProviders.map(p => p.provider);
-    
+
     // Only show connected providers (including both standard and custom)
     const providerIdsToShow = new Set([
       ...activeConnectionIds,  // Only connected providers
+      ...NO_AUTH_PROVIDER_IDS, // No-auth providers always visible
     ]);
 
     // Sort by PROVIDER_ORDER
@@ -191,43 +110,21 @@ export default function ModelSelectModal({
       const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
       const providerInfo = allProviders[providerId] || { name: providerId, color: "#666" };
       const isCustomProvider = isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
-      const dynamicModels = dynamicModelsByProvider[providerId] || [];
 
-      const mergeModels = (baseModels = [], { includeDynamic = true } = {}) => {
-        const merged = new Map();
-        for (const m of baseModels) merged.set(m.id, m);
-        if (includeDynamic) {
-          for (const dm of dynamicModels) {
-            if (!merged.has(dm.id)) {
-              merged.set(dm.id, {
-                id: dm.id,
-                name: dm.name || dm.id,
-                value: `${alias}/${dm.id}`,
-              });
-            }
-          }
-        }
-        return [...merged.values()].filter(
-          (m) =>
-            !isModelHiddenForProvider(hiddenModels, {
-              aliasKey: alias,
-              providerIdKey: providerId,
-              modelId: m.id,
-            })
-        );
-      };
-      
       if (providerInfo.passthroughModels) {
-        const aliasModelsBase = getAliasModelsForProvider(providerId, alias);
-        // Passthrough providers (e.g. OpenRouter): show user-defined aliases only.
-        // Pulling full dynamic /models list floods picker with hundreds of models.
-        const aliasModels = mergeModels(aliasModelsBase, { includeDynamic: false });
-        
+        const aliasModels = Object.entries(modelAliases)
+          .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
+          .map(([aliasName, fullModel]) => ({
+            id: fullModel.replace(`${alias}/`, ""),
+            name: aliasName,
+            value: fullModel,
+          }));
+
         if (aliasModels.length > 0) {
           // Check for custom name from providerNodes (for compatible providers)
           const matchedNode = providerNodes.find(node => node.id === providerId);
           const displayName = matchedNode?.name || providerInfo.name;
-          
+
           groups[providerId] = {
             name: displayName,
             alias: alias,
@@ -236,43 +133,68 @@ export default function ModelSelectModal({
           };
         }
       } else if (isCustomProvider) {
-        // Match provider node to get custom name
+        // Find connection object to get prefix synchronously without waiting for providerNodes fetch
+        const connection = activeProviders.find(p => p.provider === providerId);
         const matchedNode = providerNodes.find(node => node.id === providerId);
-        const displayName = matchedNode?.name || providerInfo.name;
-        
-        // Get models from modelAliases using providerId (not prefix)
-        // modelAliases format: { alias: "providerId/modelId" }
-        const nodeModels = getAliasModelsForProvider(providerId, alias);
-        const mergedNodeModels = mergeModels(nodeModels);
-        
-        // Only add to groups if there are models (consistent with other provider types)
-        if (mergedNodeModels.length > 0) {
-          groups[providerId] = {
-            name: displayName,
-            alias: matchedNode?.prefix || providerId,
-            color: providerInfo.color,
-            models: mergedNodeModels,
-            isCustom: true,
-            hasModels: true,
-          };
-        }
+        const displayName = connection?.name || matchedNode?.name || providerInfo.name;
+        const nodePrefix = connection?.providerSpecificData?.prefix || matchedNode?.prefix || providerId;
+
+        // Aliases are stored using the raw providerId as key (e.g. "openai-compatible-chat-<uuid>/glm-4.7"),
+        // so we must filter by providerId, not by the display prefix.
+        const nodeModels = Object.entries(modelAliases)
+          .filter(([, fullModel]) => fullModel.startsWith(`${providerId}/`))
+          .map(([aliasName, fullModel]) => ({
+            id: fullModel.replace(`${providerId}/`, ""),
+            name: aliasName,
+            value: `${nodePrefix}/${fullModel.replace(`${providerId}/`, "")}`,
+          }));
+
+        // Always show compatible providers that are connected, even with no aliases.
+        // When no aliases exist, show a placeholder so users know it's available.
+        const modelsToShow = nodeModels.length > 0 ? nodeModels : [{
+          id: `__placeholder__${providerId}`,
+          name: `${nodePrefix}/model-id`,
+          value: `${nodePrefix}/model-id`,
+          isPlaceholder: true,
+        }];
+
+        groups[providerId] = {
+          name: displayName,
+          alias: nodePrefix,
+          color: providerInfo.color,
+          models: modelsToShow,
+          isCustom: true,
+          hasModels: nodeModels.length > 0,
+        };
       } else {
-        const staticModels = getModelsByProviderId(providerId);
-        const aliasModels = getAliasModelsForProvider(providerId, alias);
-        const models = mergeModels([
-          ...staticModels.map((m) => ({
-            id: m.id,
-            name: m.name,
-            value: `${alias}/${m.id}`,
-          })),
-          ...aliasModels,
-        ]);
-        if (models.length > 0) {
+        const hardcodedModels = getModelsByProviderId(providerId);
+        const hardcodedIds = new Set(hardcodedModels.map((m) => m.id));
+
+        // Custom models: if no hardcoded models (e.g. openrouter), show all aliases for this provider
+        // Otherwise only show aliases where aliasName === modelId ("Add Model" button pattern)
+        const hasHardcoded = hardcodedModels.length > 0;
+        const customModels = Object.entries(modelAliases)
+          .filter(([aliasName, fullModel]) =>
+            fullModel.startsWith(`${alias}/`) &&
+            (hasHardcoded ? aliasName === fullModel.replace(`${alias}/`, "") : true) &&
+            !hardcodedIds.has(fullModel.replace(`${alias}/`, ""))
+          )
+          .map(([aliasName, fullModel]) => {
+            const modelId = fullModel.replace(`${alias}/`, "");
+            return { id: modelId, name: aliasName, value: fullModel, isCustom: true };
+          });
+
+        const allModels = [
+          ...hardcodedModels.map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}` })),
+          ...customModels,
+        ];
+
+        if (allModels.length > 0) {
           groups[providerId] = {
             name: providerInfo.name,
             alias: alias,
             color: providerInfo.color,
-            models,
+            models: allModels,
           };
         }
       }
@@ -303,7 +225,7 @@ export default function ModelSelectModal({
       );
 
       const providerNameMatches = group.name.toLowerCase().includes(query);
-      
+
       if (matchedModels.length > 0 || providerNameMatches) {
         filtered[providerId] = {
           ...group,
@@ -408,28 +330,34 @@ export default function ModelSelectModal({
 
             <div className="flex flex-wrap gap-1.5">
               {group.models.map((model) => {
-                const isSelected = multiSelect ? internalSelected.has(model.value) : selectedModel === model.value;
+                const isSelected = selectedModel === model.value;
+                const isPlaceholder = model.isPlaceholder;
                 return (
                   <button
                     key={model.id}
-                    onClick={() => multiSelect
-                      ? toggleModel(model.value)
-                      : handleSelect(model)
-                    }
+                    onClick={() => handleSelect(model)}
+                    title={isPlaceholder ? "Select to pre-fill, then edit model ID in the input" : undefined}
                     className={`
                       px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
-                      ${isSelected
-                        ? "bg-primary text-white border-primary"
-                        : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
+                      ${isPlaceholder
+                        ? "border-dashed border-border text-text-muted hover:border-primary/50 hover:text-primary bg-surface italic"
+                        : isSelected
+                          ? "bg-primary text-white border-primary"
+                          : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
                       }
                     `}
                   >
-                    {multiSelect && (
-                      <span className="material-symbols-outlined text-[12px] mr-0.5">
-                        {internalSelected.has(model.value) ? "check_box" : "check_box_outline_blank"}
+                    {isPlaceholder ? (
+                      <span className="flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[11px]">edit</span>
+                        {model.name}
                       </span>
-                    )}
-                    {model.name}
+                    ) : model.isCustom ? (
+                      <span className="flex items-center gap-1">
+                        {model.name}
+                        <span className="text-[9px] opacity-60 font-normal">custom</span>
+                      </span>
+                    ) : model.name}
                   </button>
                 );
               })}

@@ -47,6 +47,7 @@ export default function APIPageClient({ machineId }) {
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
   const [tunnelUrl, setTunnelUrl] = useState("");
+  const [tunnelPublicUrl, setTunnelPublicUrl] = useState("");
   const [tunnelShortId, setTunnelShortId] = useState("");
   const [tunnelLoading, setTunnelLoading] = useState(false);
   const [tunnelProgress, setTunnelProgress] = useState("");
@@ -282,6 +283,7 @@ export default function APIPageClient({ machineId }) {
         const data = await tunnelRes.json();
         setTunnelEnabled(data.enabled || false);
         setTunnelUrl(data.tunnelUrl || "");
+        setTunnelPublicUrl(data.publicUrl || "");
         setTunnelShortId(data.shortId || "");
       }
     } catch (error) {
@@ -345,6 +347,7 @@ export default function APIPageClient({ machineId }) {
       if (res.ok) {
         setTunnelEnabled(true);
         setTunnelUrl(data.tunnelUrl || "");
+        setTunnelPublicUrl(data.publicUrl || "");
         setTunnelShortId(data.shortId || "");
         setTunnelStatus({ type: "success", message: "Tunnel connected!" });
       } else {
@@ -369,6 +372,7 @@ export default function APIPageClient({ machineId }) {
       if (res.ok) {
         setTunnelEnabled(false);
         setTunnelUrl("");
+        setTunnelPublicUrl("");
         setTunnelStatus({ type: "success", message: "Tunnel disabled" });
         setShowDisableModal(false);
       } else {
@@ -539,7 +543,7 @@ export default function APIPageClient({ machineId }) {
     );
   }
 
-  const currentEndpoint = tunnelEnabled && tunnelUrl ? `${tunnelUrl}/v1` : baseUrl;
+  const currentEndpoint = tunnelEnabled && tunnelPublicUrl ? `${tunnelPublicUrl}/v1` : baseUrl;
 
   return (
     <div className="flex flex-col gap-8">
@@ -568,7 +572,13 @@ export default function APIPageClient({ machineId }) {
               <Button
                 variant="primary"
                 icon="cloud_upload"
-                onClick={() => setShowEnableModal(true)}
+                onClick={() => {
+                  if (!requireApiKey) {
+                    setTunnelStatus({ type: "error", message: "Security required: Enable \"Require API key\" before activating the tunnel." });
+                    return;
+                  }
+                  setShowEnableModal(true);
+                }}
                 disabled={tunnelLoading}
                 className="bg-linear-to-r from-primary to-blue-500 hover:from-primary-hover hover:to-blue-600"
               >
@@ -588,7 +598,7 @@ export default function APIPageClient({ machineId }) {
           <Input 
             value={currentEndpoint} 
             readOnly 
-            className={`flex-1 font-mono text-sm ${tunnelEnabled ? "animate-border-glow" : ""}`}
+            className={`flex-1 font-mono text-sm`}
           />
           <Button
             variant="secondary"
@@ -598,6 +608,20 @@ export default function APIPageClient({ machineId }) {
             {copied === "endpoint_url" ? "Copied!" : "Copy"}
           </Button>
         </div>
+
+        {/* Direct endpoint */}
+        {/* <div className="flex items-center gap-2 mt-1">
+          <span className="text-xs text-text-muted shrink-0">Direct</span>
+          <span className="material-symbols-outlined text-text-muted text-[12px]">arrow_forward</span>
+          <code className="flex-1 text-xs text-text-muted font-mono truncate">{currentEndpoint}/chat/completions</code>
+          <button
+            onClick={() => copy(`${currentEndpoint}/chat/completions`, "direct_url")}
+            className="p-1 text-text-muted hover:text-primary transition-colors shrink-0"
+            title="Copy direct endpoint"
+          >
+            <span className="material-symbols-outlined text-[14px]">{copied === "direct_url" ? "check" : "content_copy"}</span>
+          </button>
+        </div> */}
 
         {/* Tunnel Status */}
         {tunnelStatus && (

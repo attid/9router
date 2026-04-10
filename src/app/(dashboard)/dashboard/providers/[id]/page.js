@@ -1,17 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, Toggle, Select } from "@/shared/components";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal } from "@/shared/components";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { buildHiddenModelsMap, computeHiddenFromVisible } from "@/shared/utils/modelVisibility";
-import { useNotificationStore } from "@/store/notificationStore";
-import { formatAccessTokenExpiry, formatSessionExpiry, getRefreshTokenStatus } from "./tokenInfo";
+import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 
 export default function ProviderDetailPage() {
   const params = useParams();
@@ -20,20 +18,27 @@ export default function ProviderDetailPage() {
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [providerNode, setProviderNode] = useState(null);
+  const [proxyPools, setProxyPools] = useState([]);
   const [showOAuthModal, setShowOAuthModal] = useState(false);
+  const [showIFlowCookieModal, setShowIFlowCookieModal] = useState(false);
   const [showAddApiKeyModal, setShowAddApiKeyModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showEditNodeModal, setShowEditNodeModal] = useState(false);
+  const [showBulkProxyModal, setShowBulkProxyModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [modelAliases, setModelAliases] = useState({});
   const [headerImgError, setHeaderImgError] = useState(false);
   const [modelTestResults, setModelTestResults] = useState({});
+  const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelId, setTestingModelId] = useState(null);
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
-  const [hiddenModels, setHiddenModels] = useState({});
-  const [showHiddenModels, setShowHiddenModels] = useState(false);
-  const [showManageModels, setShowManageModels] = useState(false);
-  const [refreshingConnectionId, setRefreshingConnectionId] = useState(null);
+  const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
+  const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
+  const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
+  const [providerStrategy, setProviderStrategy] = useState(null); // null = use global, "round-robin" = override
+  const [providerStickyLimit, setProviderStickyLimit] = useState("");
+  const [suggestedModels, setSuggestedModels] = useState([]);
+  const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const { copied, copy } = useCopyToClipboard();
   const notify = useNotificationStore();
 
@@ -47,8 +52,9 @@ export default function ProviderDetailPage() {
         baseUrl: providerNode.baseUrl,
         type: providerNode.type,
       }
-    : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId]);
+    : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId]);
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId];
+  const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const models = getModelsByProviderId(providerId);
   const providerAlias = getProviderAlias(providerId);
   
@@ -74,30 +80,38 @@ export default function ProviderDetailPage() {
     }
   }, []);
 
-  const fetchSettings = useCallback(async () => {
-    try {
-      const res = await fetch("/api/settings");
-      const data = await res.json();
-      if (res.ok) {
-        setHiddenModels(data.hiddenModels || {});
-      }
-    } catch (error) {
-      console.log("Error fetching settings:", error);
-    }
-  }, []);
+  // Fetch free models from Kilo API for kilocode provider
+  useEffect(() => {
+    if (providerId !== "kilocode") return;
+    fetch("/api/providers/kilo/free-models")
+      .then((res) => res.json())
+      .then((data) => { if (data.models?.length) setKiloFreeModels(data.models); })
+      .catch(() => {});
+  }, [providerId]);
 
   const fetchConnections = useCallback(async () => {
     try {
-      const [connectionsRes, nodesRes] = await Promise.all([
+      const [connectionsRes, nodesRes, proxyPoolsRes, settingsRes] = await Promise.all([
         fetch("/api/providers", { cache: "no-store" }),
         fetch("/api/provider-nodes", { cache: "no-store" }),
+        fetch("/api/proxy-pools?isActive=true", { cache: "no-store" }),
+        fetch("/api/settings", { cache: "no-store" }),
       ]);
       const connectionsData = await connectionsRes.json();
       const nodesData = await nodesRes.json();
+      const proxyPoolsData = await proxyPoolsRes.json();
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       if (connectionsRes.ok) {
         const filtered = (connectionsData.connections || []).filter(c => c.provider === providerId);
         setConnections(filtered);
       }
+      if (proxyPoolsRes.ok) {
+        setProxyPools(proxyPoolsData.proxyPools || []);
+      }
+      // Load per-provider strategy override
+      const override = (settingsData.providerStrategies || {})[providerId] || {};
+      setProviderStrategy(override.fallbackStrategy || null);
+      setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
       if (nodesRes.ok) {
         let node = (nodesData.nodes || []).find((entry) => entry.id === providerId) || null;
 
@@ -141,11 +155,61 @@ export default function ProviderDetailPage() {
     }
   };
 
+  const saveProviderStrategy = async (strategy, stickyLimit) => {
+    try {
+      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      const current = settingsData.providerStrategies || {};
+
+      // Build override: null strategy means remove override, use global
+      const override = {};
+      if (strategy) override.fallbackStrategy = strategy;
+      if (strategy === "round-robin" && stickyLimit !== "") {
+        override.stickyRoundRobinLimit = Number(stickyLimit) || 3;
+      }
+
+      const updated = { ...current };
+      if (Object.keys(override).length === 0) {
+        delete updated[providerId];
+      } else {
+        updated[providerId] = override;
+      }
+
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerStrategies: updated }),
+      });
+    } catch (error) {
+      console.log("Error saving provider strategy:", error);
+    }
+  };
+
+  const handleRoundRobinToggle = (enabled) => {
+    const strategy = enabled ? "round-robin" : null;
+    const sticky = enabled ? (providerStickyLimit || "1") : providerStickyLimit;
+    if (enabled && !providerStickyLimit) setProviderStickyLimit("1");
+    setProviderStrategy(strategy);
+    saveProviderStrategy(strategy, sticky);
+  };
+
+  const handleStickyLimitChange = (value) => {
+    setProviderStickyLimit(value);
+    saveProviderStrategy("round-robin", value);
+  };
+
   useEffect(() => {
     fetchConnections();
     fetchAliases();
     fetchSettings();
   }, [fetchConnections, fetchAliases, fetchSettings]);
+
+  // Fetch suggested models from provider's public API (if configured)
+  useEffect(() => {
+    const fetcher = (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId])?.modelsFetcher;
+    if (!fetcher) return;
+    fetchSuggestedModels(fetcher).then(setSuggestedModels);
+  }, [providerId]);
 
   const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
     const fullModel = `${providerAliasOverride}/${modelId}`;
@@ -196,6 +260,11 @@ export default function ProviderDetailPage() {
     setShowOAuthModal(false);
   };
 
+  const handleIFlowCookieSuccess = () => {
+    fetchConnections();
+    setShowIFlowCookieModal(false);
+  };
+
   const handleSaveApiKey = async (formData) => {
     try {
       const res = await fetch("/api/providers", {
@@ -243,96 +312,207 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const handleRefreshConnection = async (id) => {
-    if (refreshingConnectionId) return;
+  const handleSwapPriority = async (index1, index2) => {
+    // Optimistic update state
+    const newConnections = [...connections];
+    [newConnections[index1], newConnections[index2]] = [newConnections[index2], newConnections[index1]];
+    setConnections(newConnections);
 
-    setRefreshingConnectionId(id);
     try {
-      const res = await fetch(`/api/providers/${id}/refresh`, { method: "POST" });
-      const data = await res.json();
-
-      if (!res.ok) {
-        notify.error(data.details ? `${data.error} — ${data.details}` : (data.error || "Failed to refresh token"));
-        return;
-      }
-
-      setConnections((prev) => prev.map((conn) => conn.id === id ? data.connection : conn));
-      notify.success("Token refreshed successfully");
+      await Promise.all([
+        fetch(`/api/providers/${newConnections[index1].id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ priority: index1 }),
+        }),
+        fetch(`/api/providers/${newConnections[index2].id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ priority: index2 }),
+        }),
+      ]);
     } catch (error) {
-      console.log("Error refreshing connection:", error);
-      notify.error(error?.message || "Failed to refresh token");
-    } finally {
-      setRefreshingConnectionId(null);
+      console.log("Error swapping priority:", error);
+      await fetchConnections();
     }
   };
 
-  const updateHiddenModels = async (nextHiddenModels) => {
-    const res = await fetch("/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hiddenModels: nextHiddenModels }),
-    });
-    if (!res.ok) {
-      throw new Error("Failed to update hidden models");
-    }
-    setHiddenModels(nextHiddenModels);
+  const selectedConnections = connections.filter((conn) => selectedConnectionIds.includes(conn.id));
+  const allSelected = connections.length > 0 && selectedConnectionIds.length === connections.length;
+
+  const toggleSelectConnection = (connectionId) => {
+    setSelectedConnectionIds((prev) => (
+      prev.includes(connectionId)
+        ? prev.filter((id) => id !== connectionId)
+        : [...prev, connectionId]
+    ));
   };
 
-  const toggleHiddenModel = async (modelId, hidden) => {
-    const current = new Set(hiddenModels[providerStorageAlias] || []);
-    if (hidden) current.add(modelId);
-    else current.delete(modelId);
-    const next = { ...hiddenModels };
-    if (current.size > 0) next[providerStorageAlias] = [...current];
-    else delete next[providerStorageAlias];
+  const toggleSelectAllConnections = () => {
+    if (allSelected) {
+      setSelectedConnectionIds([]);
+      return;
+    }
+    setSelectedConnectionIds(connections.map((conn) => conn.id));
+  };
+
+  const clearSelection = () => {
+    setSelectedConnectionIds([]);
+    setBulkProxyPoolId("__none__");
+  };
+
+  useEffect(() => {
+    setSelectedConnectionIds((prev) => prev.filter((id) => connections.some((conn) => conn.id === id)));
+  }, [connections]);
+
+  const selectedProxySummary = (() => {
+    if (selectedConnections.length === 0) return "";
+    const poolIds = new Set(selectedConnections.map((conn) => conn.providerSpecificData?.proxyPoolId || "__none__"));
+    if (poolIds.size === 1) {
+      const onlyId = [...poolIds][0];
+      if (onlyId === "__none__") return "All selected currently unbound";
+      const pool = proxyPools.find((p) => p.id === onlyId);
+      return `All selected currently bound to ${pool?.name || onlyId}`;
+    }
+    return "Selected connections have mixed proxy bindings";
+  })();
+
+  const openBulkProxyModal = () => {
+    if (selectedConnections.length === 0) return;
+    const uniquePoolIds = [...new Set(selectedConnections.map((conn) => conn.providerSpecificData?.proxyPoolId || "__none__"))];
+    setBulkProxyPoolId(uniquePoolIds.length === 1 ? uniquePoolIds[0] : "__none__");
+    setShowBulkProxyModal(true);
+  };
+
+  const closeBulkProxyModal = () => {
+    if (bulkUpdatingProxy) return;
+    setShowBulkProxyModal(false);
+  };
+
+  const handleBulkApplyProxyPool = async () => {
+    if (selectedConnectionIds.length === 0) return;
+
+    const proxyPoolId = bulkProxyPoolId === "__none__" ? null : bulkProxyPoolId;
+    setBulkUpdatingProxy(true);
     try {
-      await updateHiddenModels(next);
-    } catch (error) {
-      console.log("Error toggling hidden model:", error);
-    }
-  };
-
-  const handleApplyHiddenModels = async (hiddenModelIds) => {
-    const next = buildHiddenModelsMap(hiddenModels, providerStorageAlias, hiddenModelIds);
-    await updateHiddenModels(next);
-  };
-
-  const handleSwapPriority = async (conn1, conn2) => {
-    if (!conn1 || !conn2) return;
-    try {
-      // If they have the same priority, we need to ensure the one moving up
-      // gets a lower value than the one moving down.
-      // We use a small offset which the backend re-indexing will fix.
-      let p1 = conn2.priority;
-      let p2 = conn1.priority;
-
-      if (p1 === p2) {
-        // If moving conn1 "up" (index decreases)
-        const isConn1MovingUp = connections.indexOf(conn1) > connections.indexOf(conn2);
-        if (isConn1MovingUp) {
-          p1 = conn2.priority - 0.5;
-        } else {
-          p1 = conn2.priority + 0.5;
+      const results = [];
+      for (const connectionId of selectedConnectionIds) {
+        try {
+          const res = await fetch(`/api/providers/${connectionId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ proxyPoolId }),
+          });
+          results.push(res.ok);
+        } catch (e) {
+          console.log("Error applying bulk proxy pool for", connectionId, e);
+          results.push(false);
         }
       }
 
-      await Promise.all([
-        fetch(`/api/providers/${conn1.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ priority: p1 }),
-        }),
-        fetch(`/api/providers/${conn2.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ priority: p2 }),
-        }),
-      ]);
+      const failedCount = results.filter((ok) => !ok).length;
+      if (failedCount > 0) {
+        alert(`Updated with ${failedCount} failed request(s).`);
+      }
+
       await fetchConnections();
+      clearSelection();
+      setShowBulkProxyModal(false);
     } catch (error) {
-      console.log("Error swapping priority:", error);
+      console.log("Error applying bulk proxy pool:", error);
+    } finally {
+      setBulkUpdatingProxy(false);
     }
   };
+
+
+  const isSelected = (connectionId) => selectedConnectionIds.includes(connectionId);
+
+  const connectionsList = (
+    <div className="flex flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
+      {connections
+        .map((conn, index) => (
+          <div key={conn.id} className="flex items-stretch">
+            <div className="flex-1 min-w-0">
+              <ConnectionRow
+                connection={conn}
+                proxyPools={proxyPools}
+                isOAuth={isOAuth}
+                isFirst={index === 0}
+                isLast={index === connections.length - 1}
+                onMoveUp={() => handleSwapPriority(index, index - 1)}
+                onMoveDown={() => handleSwapPriority(index, index + 1)}
+                onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
+                onUpdateProxy={async (proxyPoolId) => {
+                  try {
+                    const res = await fetch(`/api/providers/${conn.id}`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ proxyPoolId: proxyPoolId || null }),
+                    });
+                    if (res.ok) {
+                      setConnections(prev => prev.map(c =>
+                        c.id === conn.id
+                          ? { ...c, providerSpecificData: { ...c.providerSpecificData, proxyPoolId: proxyPoolId || null } }
+                          : c
+                      ));
+                    }
+                  } catch (error) {
+                    console.log("Error updating proxy:", error);
+                  }
+                }}
+                onEdit={() => {
+                  setSelectedConnection(conn);
+                  setShowEditModal(true);
+                }}
+                onDelete={() => handleDelete(conn.id)}
+              />
+            </div>
+          </div>
+        ))}
+    </div>
+  );
+
+  const bulkProxyOptions = [
+    { value: "__none__", label: "None" },
+    ...proxyPools.map((pool) => ({ value: pool.id, label: pool.name })),
+  ];
+
+  const bulkHint = selectedConnectionIds.length === 0
+    ? "Select one or more connections, then click Proxy Action."
+    : selectedProxySummary;
+
+  const canApplyBulkProxy = selectedConnectionIds.length > 0 && !bulkUpdatingProxy;
+
+  const bulkActionModal = (
+    <Modal
+      isOpen={showBulkProxyModal}
+      onClose={closeBulkProxyModal}
+      title={`Proxy Action (${selectedConnectionIds.length} selected)`}
+    >
+      <div className="flex flex-col gap-4">
+        <Select
+          label="Proxy Pool"
+          value={bulkProxyPoolId}
+          onChange={(e) => setBulkProxyPoolId(e.target.value)}
+          options={bulkProxyOptions}
+          placeholder="None"
+        />
+
+        <p className="text-xs text-text-muted">{bulkHint}</p>
+        <p className="text-xs text-text-muted">Selecting None will unbind selected connections from proxy pool.</p>
+
+        <div className="flex gap-2">
+          <Button onClick={handleBulkApplyProxyPool} fullWidth disabled={!canApplyBulkProxy}>
+            {bulkUpdatingProxy ? "Applying..." : "Apply"}
+          </Button>
+          <Button onClick={closeBulkProxyModal} variant="ghost" fullWidth disabled={bulkUpdatingProxy}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
 
   const handleTestModel = async (modelId) => {
     if (testingModelId) return;
@@ -345,8 +525,10 @@ export default function ProviderDetailPage() {
       });
       const data = await res.json();
       setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
+      setModelsTestError(data.ok ? "" : (data.error || "Model not reachable"));
     } catch {
       setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
+      setModelsTestError("Network error");
     } finally {
       setTestingModelId(null);
     }
@@ -368,18 +550,11 @@ export default function ProviderDetailPage() {
         />
       );
     }
-    if (providerInfo.passthroughModels) {
-      return (
-        <PassthroughModelsSection
-          providerAlias={providerAlias}
-          modelAliases={modelAliases}
-          copied={copied}
-          onCopy={copy}
-          onSetAlias={handleSetAlias}
-          onDeleteAlias={handleDeleteAlias}
-        />
-      );
-    }
+    // Combine hardcoded models with Kilo free models (deduplicated)
+    const displayModels = [
+      ...models,
+      ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+    ];
     // Custom models added by user (stored as aliases: modelId → providerAlias/modelId)
     const customModels = Object.entries(modelAliases)
       .filter(([alias, fullModel]) => {
@@ -387,6 +562,8 @@ export default function ProviderDetailPage() {
         if (!fullModel.startsWith(prefix)) return false;
         const modelId = fullModel.slice(prefix.length);
         // Only show if not already in hardcoded list
+        // For passthroughModels, include all aliases (model IDs may contain slashes like "anthropic/claude-3")
+        if (providerInfo.passthroughModels) return !models.some((m) => m.id === modelId);
         return !models.some((m) => m.id === modelId) && alias === modelId;
       })
       .map(([alias, fullModel]) => ({
@@ -402,7 +579,7 @@ export default function ProviderDetailPage() {
 
     return (
       <div className="flex flex-wrap gap-3">
-        {visibleModels.map((model) => {
+        {displayModels.map((model) => {
           const fullModel = `${providerStorageAlias}/${model.id}`;
           const oldFormatModel = `${providerId}/${model.id}`;
           const existingAlias = Object.entries(modelAliases).find(
@@ -419,10 +596,9 @@ export default function ProviderDetailPage() {
               onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
               onDeleteAlias={() => handleDeleteAlias(existingAlias)}
               testStatus={modelTestResults[model.id]}
-              onTest={connections.length > 0 ? () => handleTestModel(model.id) : undefined}
+              onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelId === model.id}
-              isHidden={hiddenSet.has(model.id)}
-              onToggleHidden={() => toggleHiddenModel(model.id, !hiddenSet.has(model.id))}
+              isFree={model.isFree}
             />
           );
         })}
@@ -438,7 +614,11 @@ export default function ProviderDetailPage() {
             onCopy={copy}
             onSetAlias={() => {}}
             onDeleteAlias={() => handleDeleteAlias(model.alias)}
+            testStatus={modelTestResults[model.id]}
+            onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
+            isTesting={testingModelId === model.id}
             isCustom
+            isFree={false}
           />
         ))}
 
@@ -450,6 +630,36 @@ export default function ProviderDetailPage() {
           <span className="material-symbols-outlined text-sm">add</span>
           Add Model
         </button>
+
+        {/* Suggested models from provider API — show only models not yet added */}
+        {suggestedModels.length > 0 && (() => {
+          const addedFullModels = new Set(Object.values(modelAliases));
+          const notAdded = suggestedModels.filter(
+            (m) => !addedFullModels.has(`${providerStorageAlias}/${m.id}`)
+          );
+          if (notAdded.length === 0) return null;
+          return (
+            <div className="w-full mt-2">
+              <p className="text-xs text-text-muted mb-2">Suggested free models (≥200k context):</p>
+              <div className="flex flex-wrap gap-2">
+                {notAdded.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={async () => {
+                      const alias = m.id.split("/").pop();
+                      await handleSetAlias(m.id, alias, providerStorageAlias);
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                    title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
+                  >
+                    <span className="material-symbols-outlined text-[13px]">add</span>
+                    {m.id.split("/").pop()}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   };
@@ -526,6 +736,30 @@ export default function ProviderDetailPage() {
         </div>
       </div>
 
+      {providerInfo.deprecated && (
+        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.05] dark:border-white/[0.05]">
+          <span className="material-symbols-outlined text-[16px] text-text-muted mt-0.5 shrink-0">info</span>
+          <p className="text-xs text-text-muted leading-relaxed">{providerInfo.deprecationNotice}</p>
+        </div>
+      )}
+
+      {providerInfo.notice && !providerInfo.deprecated && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.05] dark:border-white/[0.05]">
+          <span className="material-symbols-outlined text-[16px] text-text-muted shrink-0">info</span>
+          <p className="text-xs text-text-muted leading-relaxed">{providerInfo.notice.text}</p>
+          {providerInfo.notice.apiKeyUrl && (
+            <a
+              href={providerInfo.notice.apiKeyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline shrink-0"
+            >
+              Get API Key →
+            </a>
+          )}
+        </div>
+      )}
+
       {isCompatible && providerNode && (
         <Card>
           <div className="flex items-center justify-between mb-4">
@@ -582,65 +816,100 @@ export default function ProviderDetailPage() {
       )}
 
       {/* Connections */}
-      <Card>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Connections</h2>
-          {!isCompatible && (
-            <Button
-              size="sm"
-              icon="add"
-              onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}
-            >
-              Add
-            </Button>
-          )}
-        </div>
-
-        {connections.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
-              <span className="material-symbols-outlined text-[32px]">{isOAuth ? "lock" : "key"}</span>
+      {isFreeNoAuth ? (
+        <Card>
+          <div className="flex items-center gap-3">
+            <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-green-500/10 text-green-500">
+              <span className="material-symbols-outlined text-[20px]">lock_open</span>
             </div>
-            <p className="text-text-main font-medium mb-1">No connections yet</p>
-            <p className="text-sm text-text-muted mb-4">Add your first connection to get started</p>
-            {!isCompatible && (
-              <Button icon="add" onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}>
-                Add Connection
-              </Button>
-            )}
+            <div>
+              <p className="text-sm font-medium">No authentication required</p>
+              <p className="text-xs text-text-muted">This provider is ready to use.</p>
+            </div>
           </div>
-        ) : (
-          <div className="flex flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
-            {connections
-              .sort((a, b) => (a.priority || 0) - (b.priority || 0))
-              .map((conn, index) => (
-              <ConnectionRow
-                key={conn.id}
-                connection={conn}
-                isOAuth={isOAuth}
-                isFirst={index === 0}
-                isLast={index === connections.length - 1}
-                isRefreshing={refreshingConnectionId === conn.id}
-                onMoveUp={() => handleSwapPriority(conn, connections[index - 1])}
-                onMoveDown={() => handleSwapPriority(conn, connections[index + 1])}
-                onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
-                onRefresh={() => handleRefreshConnection(conn.id)}
-                onEdit={() => {
-                  setSelectedConnection(conn);
-                  setShowEditModal(true);
-                }}
-                onDelete={() => handleDelete(conn.id)}
+        </Card>
+      ) : (
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Connections</h2>
+            {/* Round Robin toggle */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-muted font-medium">Round Robin</span>
+              <Toggle
+                checked={providerStrategy === "round-robin"}
+                onChange={handleRoundRobinToggle}
               />
-            ))}
+              {providerStrategy === "round-robin" && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-text-muted">Sticky:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={providerStickyLimit}
+                    onChange={(e) => handleStickyLimitChange(e.target.value)}
+                    placeholder="1"
+                    className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
+                  />
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </Card>
+
+          {connections.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
+                <span className="material-symbols-outlined text-[32px]">{isOAuth ? "lock" : "key"}</span>
+              </div>
+              <p className="text-text-main font-medium mb-1">No connections yet</p>
+              <p className="text-sm text-text-muted mb-4">Add your first connection to get started</p>
+              {!isCompatible && (
+                <div className="flex gap-2 justify-center">
+                  {providerId === "iflow" && (
+                    <Button icon="cookie" variant="secondary" onClick={() => setShowIFlowCookieModal(true)}>
+                      Cookie Auth
+                    </Button>
+                  )}
+                  <Button icon="add" onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}>
+                    {providerId === "iflow" ? "OAuth" : "Add Connection"}
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              {connectionsList}
+              {!isCompatible && (
+                <div className="flex gap-2 mt-4">
+                  {providerId === "iflow" && (
+                    <Button
+                      size="sm"
+                      icon="cookie"
+                      variant="secondary"
+                      onClick={() => setShowIFlowCookieModal(true)}
+                      title="Add connection using browser cookie"
+                    >
+                      Cookie
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    icon="add"
+                    onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}
+                  >
+                    Add
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+      )}
 
       {/* Models */}
       <Card>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">
-            {providerInfo.passthroughModels ? "Model Aliases" : "Available Models"}
+            {"Available Models"}
           </h2>
           {!providerInfo.passthroughModels && !isCompatible && (
             <div className="flex items-center gap-2">
@@ -661,8 +930,13 @@ export default function ProviderDetailPage() {
             </div>
           )}
         </div>
+        {!!modelsTestError && (
+          <p className="text-xs text-red-500 mb-3 break-words">{modelsTestError}</p>
+        )}
         {renderModelsSection()}
       </Card>
+
+      {bulkActionModal}
 
       {/* Modals */}
       {providerId === "kiro" ? (
@@ -678,6 +952,13 @@ export default function ProviderDetailPage() {
           onSuccess={handleOAuthSuccess}
           onClose={() => setShowOAuthModal(false)}
         />
+      ) : providerId === "gitlab" ? (
+        <GitLabAuthModal
+          isOpen={showOAuthModal}
+          providerInfo={providerInfo}
+          onSuccess={handleOAuthSuccess}
+          onClose={() => setShowOAuthModal(false)}
+        />
       ) : (
         <OAuthModal
           isOpen={showOAuthModal}
@@ -687,18 +968,27 @@ export default function ProviderDetailPage() {
           onClose={() => setShowOAuthModal(false)}
         />
       )}
+      {providerId === "iflow" && (
+        <IFlowCookieModal
+          isOpen={showIFlowCookieModal}
+          onSuccess={handleIFlowCookieSuccess}
+          onClose={() => setShowIFlowCookieModal(false)}
+        />
+      )}
       <AddApiKeyModal
         isOpen={showAddApiKeyModal}
         provider={providerId}
         providerName={providerInfo.name}
         isCompatible={isCompatible}
         isAnthropic={isAnthropicCompatible}
+        proxyPools={proxyPools}
         onSave={handleSaveApiKey}
         onClose={() => setShowAddApiKeyModal(false)}
       />
       <EditConnectionModal
         isOpen={showEditModal}
         connection={selectedConnection}
+        proxyPools={proxyPools}
         onSave={handleUpdateConnection}
         onClose={() => setShowEditModal(false)}
       />
@@ -711,13 +1001,17 @@ export default function ProviderDetailPage() {
           isAnthropic={isAnthropicCompatible}
         />
       )}
-      {!isCompatible && !providerInfo?.passthroughModels && (
+      {!isCompatible && (
         <AddCustomModelModal
           isOpen={showAddCustomModel}
           providerAlias={providerStorageAlias}
           providerDisplayAlias={providerDisplayAlias}
           onSave={async (modelId) => {
-            await handleSetAlias(modelId, modelId, providerStorageAlias);
+            // For passthrough providers (OpenRouter), use last segment as alias to avoid slash conflicts
+            const alias = providerInfo?.passthroughModels
+              ? modelId.split("/").pop()
+              : modelId;
+            await handleSetAlias(modelId, alias, providerStorageAlias);
             setShowAddCustomModel(false);
           }}
           onClose={() => setShowAddCustomModel(false)}
@@ -738,7 +1032,7 @@ export default function ProviderDetailPage() {
   );
 }
 
-function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, onDeleteAlias, onTest, isTesting, isHidden, onToggleHidden }) {
+function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -752,55 +1046,54 @@ function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCusto
     : undefined;
 
   return (
-    <div className={`group flex items-center gap-2 px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50 ${isHidden ? "opacity-60" : ""}`}>
-      <span
-        className="material-symbols-outlined text-base"
-        style={iconColor ? { color: iconColor } : undefined}
-      >
-        {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
-      </span>
-      <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
-      {onTest && (
-        <button
-          onClick={onTest}
-          disabled={isTesting}
-          className={`p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-          title="Test model"
+    <div className={`group px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
+      <div className="flex items-center gap-2">
+        <span
+          className="material-symbols-outlined text-base"
+          style={iconColor ? { color: iconColor } : undefined}
         >
-          <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
-            {isTesting ? "progress_activity" : "science"}
-          </span>
-        </button>
-      )}
-      <button
-        onClick={() => onCopy(fullModel, `model-${model.id}`)}
-        className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
-        title="Copy model"
-      >
-        <span className="material-symbols-outlined text-sm">
-          {copied === `model-${model.id}` ? "check" : "content_copy"}
+          {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
         </span>
-      </button>
-      {!isCustom && onToggleHidden && (
-        <button
-          onClick={onToggleHidden}
-          className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
-          title={isHidden ? "Unhide model" : "Hide model"}
-        >
-          <span className="material-symbols-outlined text-sm">
-            {isHidden ? "visibility" : "visibility_off"}
+        <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+        {onTest && (
+          <div className="relative group/btn">
+            <button
+              onClick={onTest}
+              disabled={isTesting}
+              className={`p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+            >
+              <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+                {isTesting ? "progress_activity" : "science"}
+              </span>
+            </button>
+            <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+              {isTesting ? "Testing..." : "Test"}
+            </span>
+          </div>
+        )}
+        <div className="relative group/btn">
+          <button
+            onClick={() => onCopy(fullModel, `model-${model.id}`)}
+            className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
+          >
+            <span className="material-symbols-outlined text-sm">
+              {copied === `model-${model.id}` ? "check" : "content_copy"}
+            </span>
+          </button>
+          <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+            {copied === `model-${model.id}` ? "Copied!" : "Copy"}
           </span>
-        </button>
-      )}
-      {isCustom && (
-        <button
-          onClick={onDeleteAlias}
-          className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity ml-auto"
-          title="Remove custom model"
-        >
-          <span className="material-symbols-outlined text-sm">close</span>
-        </button>
-      )}
+        </div>
+        {isCustom && (
+          <button
+            onClick={onDeleteAlias}
+            className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity ml-auto"
+            title="Remove custom model"
+          >
+            <span className="material-symbols-outlined text-sm">close</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -815,6 +1108,7 @@ ModelRow.propTypes = {
   onCopy: PropTypes.func.isRequired,
   testStatus: PropTypes.oneOf(["ok", "error"]),
   isCustom: PropTypes.bool,
+  isFree: PropTypes.bool,
   onDeleteAlias: PropTypes.func,
   onTest: PropTypes.func,
   isTesting: PropTypes.bool,
@@ -1037,25 +1331,62 @@ PassthroughModelsSection.propTypes = {
   onDeleteAlias: PropTypes.func.isRequired,
 };
 
-function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias }) {
+function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
+  const borderColor = testStatus === "ok"
+    ? "border-green-500/40"
+    : testStatus === "error"
+    ? "border-red-500/40"
+    : "border-border";
+
+  const iconColor = testStatus === "ok"
+    ? "#22c55e"
+    : testStatus === "error"
+    ? "#ef4444"
+    : undefined;
+
   return (
-    <div className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-sidebar/50">
-      <span className="material-symbols-outlined text-base text-text-muted">smart_toy</span>
+    <div className={`flex items-center gap-3 p-3 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
+      <span
+        className="material-symbols-outlined text-base text-text-muted"
+        style={iconColor ? { color: iconColor } : undefined}
+      >
+        {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
+      </span>
 
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{modelId}</p>
 
         <div className="flex items-center gap-1 mt-1">
-          <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
-          <button
-            onClick={() => onCopy(fullModel, `model-${modelId}`)}
-            className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
-            title="Copy model"
-          >
-            <span className="material-symbols-outlined text-sm">
-              {copied === `model-${modelId}` ? "check" : "content_copy"}
+        <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+          <div className="relative group/btn">
+            <button
+              onClick={() => onCopy(fullModel, `model-${modelId}`)}
+              className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
+            >
+              <span className="material-symbols-outlined text-sm">
+                {copied === `model-${modelId}` ? "check" : "content_copy"}
+              </span>
+            </button>
+            <span className="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+              {copied === `model-${modelId}` ? "Copied!" : "Copy"}
             </span>
-          </button>
+          </div>
+          {onTest && (
+            <div className="relative group/btn">
+              <button
+                onClick={onTest}
+                disabled={isTesting}
+                className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+                  {isTesting ? "progress_activity" : "science"}
+                </span>
+              </button>
+              <span className="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+                {isTesting ? "Testing..." : "Test"}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1077,12 +1408,35 @@ PassthroughModelRow.propTypes = {
   copied: PropTypes.string,
   onCopy: PropTypes.func.isRequired,
   onDeleteAlias: PropTypes.func.isRequired,
+  onTest: PropTypes.func,
+  testStatus: PropTypes.oneOf(["ok", "error"]),
+  isTesting: PropTypes.bool,
 };
 
 function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias, connections, isAnthropic }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [testingModelId, setTestingModelId] = useState(null);
+  const [modelTestResults, setModelTestResults] = useState({});
+
+  const handleTestModel = async (modelId) => {
+    if (testingModelId) return;
+    setTestingModelId(modelId);
+    try {
+      const res = await fetch("/api/models/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}` }),
+      });
+      const data = await res.json();
+      setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
+    } catch {
+      setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
+    } finally {
+      setTestingModelId(null);
+    }
+  };
 
   const providerAliases = Object.entries(modelAliases).filter(
     ([, model]) => model.startsWith(`${providerStorageAlias}/`)
@@ -1100,6 +1454,9 @@ function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, m
   };
 
   const resolveAlias = (modelId) => {
+    const fullModel = `${providerStorageAlias}/${modelId}`;
+    // Skip if this exact model already has an alias
+    if (Object.values(modelAliases).includes(fullModel)) return null;
     const baseAlias = generateDefaultAlias(modelId);
     if (!modelAliases[baseAlias]) return baseAlias;
     const prefixedAlias = `${providerDisplayAlias}-${baseAlias}`;
@@ -1209,6 +1566,9 @@ function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, m
               copied={copied}
               onCopy={onCopy}
               onDeleteAlias={() => onDeleteAlias(alias)}
+              onTest={connections.length > 0 ? () => handleTestModel(modelId) : undefined}
+              testStatus={modelTestResults[modelId]}
+              isTesting={testingModelId === modelId}
             />
           ))}
         </div>
@@ -1272,7 +1632,66 @@ CooldownTimer.propTypes = {
   until: PropTypes.string.isRequired,
 };
 
-function ConnectionRow({ connection, isOAuth, isFirst, isLast, isRefreshing, onMoveUp, onMoveDown, onToggleActive, onRefresh, onEdit, onDelete }) {
+function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
+  const [showProxyDropdown, setShowProxyDropdown] = useState(false);
+  const [updatingProxy, setUpdatingProxy] = useState(false);
+  const proxyDropdownRef = useRef(null);
+
+  const proxyPoolMap = new Map((proxyPools || []).map((pool) => [pool.id, pool]));
+  const boundProxyPoolId = connection.providerSpecificData?.proxyPoolId || null;
+  const boundProxyPool = boundProxyPoolId ? proxyPoolMap.get(boundProxyPoolId) : null;
+  const hasLegacyProxy = connection.providerSpecificData?.connectionProxyEnabled === true && !!connection.providerSpecificData?.connectionProxyUrl;
+  const hasAnyProxy = !!boundProxyPoolId || hasLegacyProxy;
+  const proxyDisplayText = boundProxyPool
+    ? `Pool: ${boundProxyPool.name}`
+    : boundProxyPoolId
+      ? `Pool: ${boundProxyPoolId} (inactive/missing)`
+      : hasLegacyProxy
+        ? `Legacy: ${connection.providerSpecificData?.connectionProxyUrl}`
+        : "";
+
+  let maskedProxyUrl = "";
+  if (boundProxyPool?.proxyUrl || connection.providerSpecificData?.connectionProxyUrl) {
+    const rawProxyUrl = boundProxyPool?.proxyUrl || connection.providerSpecificData?.connectionProxyUrl;
+    try {
+      const parsed = new URL(rawProxyUrl);
+      maskedProxyUrl = `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`;
+    } catch {
+      maskedProxyUrl = rawProxyUrl;
+    }
+  }
+
+  const noProxyText = boundProxyPool?.noProxy || connection.providerSpecificData?.connectionNoProxy || "";
+
+  let proxyBadgeVariant = "default";
+  if (boundProxyPool?.isActive === true) {
+    proxyBadgeVariant = "success";
+  } else if (boundProxyPoolId || hasLegacyProxy) {
+    proxyBadgeVariant = "error";
+  }
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!showProxyDropdown) return;
+    const handler = (e) => {
+      if (proxyDropdownRef.current && !proxyDropdownRef.current.contains(e.target)) {
+        setShowProxyDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showProxyDropdown]);
+
+  const handleSelectProxy = async (poolId) => {
+    setUpdatingProxy(true);
+    try {
+      await onUpdateProxy(poolId === "__none__" ? null : poolId);
+    } finally {
+      setUpdatingProxy(false);
+      setShowProxyDropdown(false);
+    }
+  };
+
   const displayName = isOAuth
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
     : connection.name;
@@ -1349,6 +1768,11 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, isRefreshing, onM
             <Badge variant={getStatusVariant()} size="sm" dot>
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
             </Badge>
+            {hasAnyProxy && (
+              <Badge variant={proxyBadgeVariant} size="sm">
+                Proxy
+              </Badge>
+            )}
             {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
             {connection.lastError && connection.isActive !== false && (
               <span className="text-xs text-red-500 truncate max-w-[300px]" title={connection.lastError}>
@@ -1360,48 +1784,76 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, isRefreshing, onM
               <span className="text-xs text-text-muted">Auto: {connection.globalPriority}</span>
             )}
           </div>
-          {isOAuth && connection.tokenInfo && (
-            <div className="flex flex-col gap-1 mt-2 text-xs text-text-muted">
-              <div>Access token: {accessExpiryText}</div>
-              {sessionExpiryText && <div>Session expires {sessionExpiryText}</div>}
-              <div className="flex items-center gap-1.5">
-                <span className={`inline-block w-2 h-2 rounded-full ${refreshStatus.tone === "success" ? "bg-green-500" : "bg-red-500"}`} />
-                <span>{refreshStatus.label}</span>
-              </div>
+          {hasAnyProxy && (
+            <div className="mt-1 flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] text-text-muted truncate max-w-[420px]" title={proxyDisplayText}>
+                {proxyDisplayText}
+              </span>
+              {maskedProxyUrl && (
+                <code className="text-[10px] font-mono bg-black/5 dark:bg-white/5 px-1 py-0.5 rounded text-text-muted">
+                  {maskedProxyUrl}
+                </code>
+              )}
+              {noProxyText && (
+                <span className="text-[11px] text-text-muted truncate max-w-[320px]" title={noProxyText}>
+                  no_proxy: {noProxyText}
+                </span>
+              )}
             </div>
           )}
         </div>
       </div>
       <div className="flex items-center gap-2">
-        {isOAuth && (
-          <button
-            onClick={onRefresh}
-            disabled={isRefreshing}
-            className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Refresh token now"
-          >
-            <span
-              className="material-symbols-outlined text-[18px]"
-              style={isRefreshing ? { animation: "spin 1s linear infinite" } : undefined}
-            >
-              {isRefreshing ? "progress_activity" : "refresh"}
-            </span>
+        <div className="flex gap-1">
+          {/* Proxy button with inline dropdown */}
+          {(proxyPools || []).length > 0 && (
+            <div className="relative" ref={proxyDropdownRef}>
+              <button
+                onClick={() => setShowProxyDropdown((v) => !v)}
+                className={`flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${hasAnyProxy ? "text-primary" : "text-text-muted hover:text-primary"}`}
+                disabled={updatingProxy}
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  {updatingProxy ? "progress_activity" : "lan"}
+                </span>
+                <span className="text-[10px] leading-tight">Proxy</span>
+              </button>
+              {showProxyDropdown && (
+                <div className="absolute right-0 top-full mt-1 z-50 bg-bg border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
+                  <button
+                    onClick={() => handleSelectProxy("__none__")}
+                    className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}
+                  >
+                    None
+                  </button>
+                  {(proxyPools || []).map((pool) => (
+                    <button
+                      key={pool.id}
+                      onClick={() => handleSelectProxy(pool.id)}
+                      className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${boundProxyPoolId === pool.id ? "text-primary font-medium" : "text-text-main"}`}
+                    >
+                      {pool.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <button onClick={onEdit} className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary">
+            <span className="material-symbols-outlined text-[18px]">edit</span>
+            <span className="text-[10px] leading-tight">Edit</span>
           </button>
-        )}
+          <button onClick={onDelete} className="flex flex-col items-center px-2 py-1 rounded hover:bg-red-500/10 text-red-500">
+            <span className="material-symbols-outlined text-[18px]">delete</span>
+            <span className="text-[10px] leading-tight">Delete</span>
+          </button>
+        </div>
         <Toggle
           size="sm"
           checked={connection.isActive ?? true}
           onChange={onToggleActive}
           title={(connection.isActive ?? true) ? "Disable connection" : "Enable connection"}
         />
-        <div className="flex gap-1 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={onEdit} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary">
-            <span className="material-symbols-outlined text-[18px]">edit</span>
-          </button>
-          <button onClick={onDelete} className="p-2 hover:bg-red-500/10 rounded text-red-500">
-            <span className="material-symbols-outlined text-[18px]">delete</span>
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -1420,6 +1872,13 @@ ConnectionRow.propTypes = {
     priority: PropTypes.number,
     globalPriority: PropTypes.number,
   }).isRequired,
+  proxyPools: PropTypes.arrayOf(PropTypes.shape({
+    id: PropTypes.string,
+    name: PropTypes.string,
+    proxyUrl: PropTypes.string,
+    noProxy: PropTypes.string,
+    isActive: PropTypes.bool,
+  })),
   isOAuth: PropTypes.bool.isRequired,
   isFirst: PropTypes.bool.isRequired,
   isLast: PropTypes.bool.isRequired,
@@ -1427,16 +1886,19 @@ ConnectionRow.propTypes = {
   onMoveUp: PropTypes.func.isRequired,
   onMoveDown: PropTypes.func.isRequired,
   onToggleActive: PropTypes.func.isRequired,
-  onRefresh: PropTypes.func,
+  onUpdateProxy: PropTypes.func,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
 };
 
-function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, onSave, onClose }) {
+function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, proxyPools, onSave, onClose }) {
+  const NONE_PROXY_POOL_VALUE = "__none__";
+
   const [formData, setFormData] = useState({
     name: "",
     apiKey: "",
     priority: 1,
+    proxyPoolId: NONE_PROXY_POOL_VALUE,
   });
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
@@ -1486,7 +1948,9 @@ function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthro
         name: formData.name,
         apiKey: formData.apiKey,
         priority: formData.priority,
+        proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
         testStatus: isValid ? "active" : "unknown",
+        providerSpecificData: undefined
       });
     } finally {
       setSaving(false);
@@ -1537,6 +2001,28 @@ function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthro
           value={formData.priority}
           onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value) || 1 })}
         />
+
+        <Select
+          label="Proxy Pool"
+          value={formData.proxyPoolId}
+          onChange={(e) => setFormData({ ...formData, proxyPoolId: e.target.value })}
+          options={[
+            { value: NONE_PROXY_POOL_VALUE, label: "None" },
+            ...(proxyPools || []).map((pool) => ({ value: pool.id, label: pool.name })),
+          ]}
+          placeholder="None"
+        />
+
+        {(proxyPools || []).length === 0 && (
+          <p className="text-xs text-text-muted">
+            No active proxy pools available. Create one in Proxy Pools page first.
+          </p>
+        )}
+
+        <p className="text-xs text-text-muted">
+          Legacy manual proxy fields are still accepted by API for backward compatibility.
+        </p>
+
         <div className="flex gap-2">
           <Button onClick={handleSubmit} fullWidth disabled={!formData.name || !formData.apiKey || saving}>
             {saving ? "Saving..." : "Save"}
@@ -1556,190 +2042,10 @@ AddApiKeyModal.propTypes = {
   providerName: PropTypes.string,
   isCompatible: PropTypes.bool,
   isAnthropic: PropTypes.bool,
-  onSave: PropTypes.func.isRequired,
-  onClose: PropTypes.func.isRequired,
-};
-
-function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
-  const [formData, setFormData] = useState({
-    name: "",
-    priority: 1,
-    apiKey: "",
-  });
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState(null);
-  const [validating, setValidating] = useState(false);
-  const [validationResult, setValidationResult] = useState(null);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (connection) {
-      setFormData({
-        name: connection.name || "",
-        priority: connection.priority || 1,
-        apiKey: "",
-      });
-      setTestResult(null);
-      setValidationResult(null);
-    }
-  }, [connection]);
-
-  const handleTest = async () => {
-    if (!connection?.provider) return;
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const res = await fetch(`/api/providers/${connection.id}/test`, { method: "POST" });
-      const data = await res.json();
-      setTestResult(data.valid ? "success" : "failed");
-    } catch {
-      setTestResult("failed");
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const handleValidate = async () => {
-    if (!connection?.provider || !formData.apiKey) return;
-    setValidating(true);
-    setValidationResult(null);
-    try {
-      const res = await fetch("/api/providers/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: connection.provider, apiKey: formData.apiKey }),
-      });
-      const data = await res.json();
-      setValidationResult(data.valid ? "success" : "failed");
-    } catch {
-      setValidationResult("failed");
-    } finally {
-      setValidating(false);
-    }
-  };
-
-  const handleSubmit = async () => {
-    setSaving(true);
-    try {
-      const updates = { name: formData.name, priority: formData.priority };
-      if (!isOAuth && formData.apiKey) {
-        updates.apiKey = formData.apiKey;
-        let isValid = validationResult === "success";
-        if (!isValid) {
-          try {
-            setValidating(true);
-            setValidationResult(null);
-            const res = await fetch("/api/providers/validate", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ provider: connection.provider, apiKey: formData.apiKey }),
-            });
-            const data = await res.json();
-            isValid = !!data.valid;
-            setValidationResult(isValid ? "success" : "failed");
-          } catch {
-            setValidationResult("failed");
-          } finally {
-            setValidating(false);
-          }
-        }
-        if (isValid) {
-          updates.testStatus = "active";
-          updates.lastError = null;
-          updates.lastErrorAt = null;
-        }
-      }
-      await onSave(updates);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (!connection) return null;
-
-  const isOAuth = connection.authType === "oauth";
-  const isCompatible = isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider);
-
-  return (
-    <Modal isOpen={isOpen} title="Edit Connection" onClose={onClose}>
-      <div className="flex flex-col gap-4">
-          <Input
-            label="Name"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder={isOAuth ? "Account name" : "Production Key"}
-          />
-        {isOAuth && connection.email && (
-          <div className="bg-sidebar/50 p-3 rounded-lg">
-            <p className="text-sm text-text-muted mb-1">Email</p>
-            <p className="font-medium">{connection.email}</p>
-          </div>
-        )}
-        <Input
-          label="Priority"
-          type="number"
-          value={formData.priority}
-          onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value) || 1 })}
-        />
-        {!isOAuth && (
-          <>
-            <div className="flex gap-2">
-              <Input
-                label="API Key"
-                type="password"
-                value={formData.apiKey}
-                onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-                placeholder="Enter new API key"
-                hint="Leave blank to keep the current API key."
-                className="flex-1"
-              />
-              <div className="pt-6">
-                <Button onClick={handleValidate} disabled={!formData.apiKey || validating || saving} variant="secondary">
-                  {validating ? "Checking..." : "Check"}
-                </Button>
-              </div>
-            </div>
-            {validationResult && (
-              <Badge variant={validationResult === "success" ? "success" : "error"}>
-                {validationResult === "success" ? "Valid" : "Invalid"}
-              </Badge>
-            )}
-          </>
-        )}
-
-        {/* Test Connection */}
-        {!isCompatible && (
-          <div className="flex items-center gap-3">
-            <Button onClick={handleTest} variant="secondary" disabled={testing}>
-              {testing ? "Testing..." : "Test Connection"}
-            </Button>
-            {testResult && (
-              <Badge variant={testResult === "success" ? "success" : "error"}>
-                {testResult === "success" ? "Valid" : "Failed"}
-              </Badge>
-            )}
-          </div>
-        )}
-
-        <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
-          <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-EditConnectionModal.propTypes = {
-  isOpen: PropTypes.bool.isRequired,
-  connection: PropTypes.shape({
+  proxyPools: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,
     name: PropTypes.string,
-    email: PropTypes.string,
-    priority: PropTypes.number,
-    authType: PropTypes.string,
-    provider: PropTypes.string,
-  }),
+  })),
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 };
@@ -1753,6 +2059,7 @@ function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic })
   });
   const [saving, setSaving] = useState(false);
   const [checkKey, setCheckKey] = useState("");
+  const [checkModelId, setCheckModelId] = useState("");
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
 
@@ -1796,10 +2103,11 @@ function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic })
       const res = await fetch("/api/provider-nodes/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          baseUrl: formData.baseUrl, 
-          apiKey: checkKey, 
-          type: isAnthropic ? "anthropic-compatible" : "openai-compatible" 
+        body: JSON.stringify({
+          baseUrl: formData.baseUrl,
+          apiKey: checkKey,
+          type: isAnthropic ? "anthropic-compatible" : "openai-compatible",
+          modelId: checkModelId.trim() || undefined
         }),
       });
       const data = await res.json();
@@ -1859,6 +2167,13 @@ function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic })
             </Button>
           </div>
         </div>
+        <Input
+          label="Model ID (optional)"
+          value={checkModelId}
+          onChange={(e) => setCheckModelId(e.target.value)}
+          placeholder="e.g. my-model-id"
+          hint="If provider lacks /models endpoint, enter a model ID to validate via chat/completions instead."
+        />
         {validationResult && (
           <Badge variant={validationResult === "success" ? "success" : "error"}>
             {validationResult === "success" ? "Valid" : "Invalid"}

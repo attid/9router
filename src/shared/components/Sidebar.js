@@ -6,34 +6,45 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
+import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
 
 const navItems = [
   { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
   { href: "/dashboard/providers", label: "Providers", icon: "dns" },
+  // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
   { href: "/dashboard/combos", label: "Combos", icon: "layers" },
   { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
+  { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
+  { href: "/dashboard/mitm", label: "MITM", icon: "security" },
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
 ];
 
-// Debug items (only show when ENABLE_REQUEST_LOGS=true)
 const debugItems = [
-  // { href: "/dashboard/translator", label: "Translator", icon: "translate" },
-  { href: "/dashboard/chat-test", label: "Chat Test", icon: "chat" },
   { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
+  { href: "/dashboard/translator", label: "Translator", icon: "translate" },
 ];
 
 const systemItems = [
-  { href: "/dashboard/profile", label: "Settings", icon: "settings" },
+  { href: "/dashboard/proxy-pools", label: "Proxy Pools", icon: "lan" },
 ];
 
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
+  const [mediaOpen, setMediaOpen] = useState(false);
   const [showShutdownModal, setShowShutdownModal] = useState(false);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
+  const [enableTranslator, setEnableTranslator] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then(res => res.json())
+      .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
+      .catch(() => {});
+  }, []);
 
   // Lazy check for new npm version on mount
   useEffect(() => {
@@ -64,7 +75,7 @@ export default function Sidebar({ onClose }) {
 
   return (
     <>
-      <aside className="flex w-72 flex-col border-r border-black/5 dark:border-white/5 bg-vibrancy backdrop-blur-xl transition-colors duration-300">
+      <aside className="flex w-72 flex-col border-r border-black/5 dark:border-white/5 bg-vibrancy backdrop-blur-xl transition-colors duration-300 min-h-full">
         {/* Traffic lights */}
         <div className="flex items-center gap-2 px-6 pt-5 pb-2">
           <div className="w-3 h-3 rounded-full bg-[#FF5F56]" />
@@ -123,35 +134,43 @@ export default function Sidebar({ onClose }) {
             </Link>
           ))}
 
-          {/* Debug section */}
-          <div className="pt-4 mt-2">
-              <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-                Debug
-              </p>
-              {debugItems.map((item) => (
+          {/* Media Providers accordion */}
+          {/* <button
+            onClick={() => setMediaOpen((v) => !v)}
+            className={cn(
+              "w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
+              pathname.startsWith("/dashboard/media-providers")
+                ? "bg-primary/10 text-primary"
+                : "text-text-muted hover:bg-surface/50 hover:text-text-main"
+            )}
+          >
+            <span className="material-symbols-outlined text-[18px]">perm_media</span>
+            <span className="text-sm font-medium flex-1 text-left">Media Providers</span>
+            <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
+              expand_more
+            </span>
+          </button> */}
+          {mediaOpen && (
+            <div className="pl-4">
+              {MEDIA_PROVIDER_KINDS.map((kind) => (
                 <Link
-                  key={item.href}
-                  href={item.href}
+                  key={kind.id}
+                  href={`/dashboard/media-providers/${kind.id}`}
                   onClick={onClose}
                   className={cn(
-                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
-                    isActive(item.href)
+                    "flex items-center gap-3 px-4 py-1.5 rounded-lg transition-all group",
+                    pathname.startsWith(`/dashboard/media-providers/${kind.id}`)
                       ? "bg-primary/10 text-primary"
                       : "text-text-muted hover:bg-surface/50 hover:text-text-main"
                   )}
                 >
-                  <span
-                    className={cn(
-                      "material-symbols-outlined text-[18px]",
-                      isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                    )}
-                  >
-                    {item.icon}
-                  </span>
-                  <span className="text-sm font-medium">{item.label}</span>
+                  <span className="material-symbols-outlined text-[16px]">{kind.icon}</span>
+                  <span className="text-sm">{kind.label}</span>
                 </Link>
               ))}
             </div>
+          )}
+
 
           {/* System section */}
           <div className="pt-4 mt-2">
@@ -181,23 +200,61 @@ export default function Sidebar({ onClose }) {
                 <span className="text-sm font-medium">{item.label}</span>
               </Link>
             ))}
+
+            {/* Debug items (inside System section, before Settings) */}
+            {debugItems.map((item) => {
+              const show = item.href !== "/dashboard/translator" || enableTranslator;
+              return show ? (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onClose}
+                  className={cn(
+                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
+                    isActive(item.href)
+                      ? "bg-primary/10 text-primary"
+                      : "text-text-muted hover:bg-surface/50 hover:text-text-main"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "material-symbols-outlined text-[18px]",
+                      isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                    )}
+                  >
+                    {item.icon}
+                  </span>
+                  <span className="text-sm font-medium">{item.label}</span>
+                </Link>
+              ) : null;
+            })}
+
+            {/* Settings */}
+            <Link
+              href="/dashboard/profile"
+              onClick={onClose}
+              className={cn(
+                "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
+                isActive("/dashboard/profile")
+                  ? "bg-primary/10 text-primary"
+                  : "text-text-muted hover:bg-surface/50 hover:text-text-main"
+              )}
+            >
+              <span
+                className={cn(
+                  "material-symbols-outlined text-[18px]",
+                  isActive("/dashboard/profile") ? "fill-1" : "group-hover:text-primary transition-colors"
+                )}
+              >
+                settings
+              </span>
+              <span className="text-sm font-medium">Settings</span>
+            </Link>
           </div>
         </nav>
 
         {/* Footer section */}
         <div className="p-3 border-t border-black/5 dark:border-white/5">
-          {/* Info message */}
-          <div className="flex items-start gap-2 p-2 rounded-lg bg-surface/50 mb-2">
-            <div className="flex items-center justify-center size-6 rounded-md bg-blue-500/10 text-blue-500 shrink-0 mt-0.5">
-              <span className="material-symbols-outlined text-[14px]">info</span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-xs font-medium text-text-main leading-relaxed">
-                Service is running in terminal. You can close this web page. Shutdown will stop the service.
-              </span>
-            </div>
-          </div>
-
           {/* Shutdown button */}
           <Button
             variant="outline"

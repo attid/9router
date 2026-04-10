@@ -13,7 +13,6 @@ import {
   Legend,
 } from "recharts";
 import Card from "@/shared/components/Card";
-import { buildUsageQuery } from "@/shared/utils/usagePeriod";
 
 const fmtTokens = (n) => {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -23,7 +22,7 @@ const fmtTokens = (n) => {
 
 const fmtCost = (n) => `$${(n || 0).toFixed(4)}`;
 
-export default function UsageChart({ usageRange }) {
+export default function UsageChart({ period = "7d" }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState("tokens");
@@ -52,21 +51,19 @@ export default function UsageChart({ usageRange }) {
 
   return (
     <Card className="p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
-          <button
-            onClick={() => setViewMode("tokens")}
-            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "tokens" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
-          >
-            Tokens
-          </button>
-          <button
-            onClick={() => setViewMode("cost")}
-            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "cost" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
-          >
-            Cost
-          </button>
-        </div>
+      <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border self-start">
+        <button
+          onClick={() => setViewMode("tokens")}
+          className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "tokens" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
+        >
+          Tokens
+        </button>
+        <button
+          onClick={() => setViewMode("cost")}
+          className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "cost" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
+        >
+          Cost
+        </button>
       </div>
 
       {loading ? (
@@ -141,9 +138,5 @@ export default function UsageChart({ usageRange }) {
 }
 
 UsageChart.propTypes = {
-  usageRange: PropTypes.shape({
-    preset: PropTypes.string,
-    start: PropTypes.string,
-    end: PropTypes.string,
-  }).isRequired,
+  period: PropTypes.string,
 };

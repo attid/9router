@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
-const VALID_NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
+const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
 export default function CombosPage() {
   const [combos, setCombos] = useState([]);
@@ -14,6 +14,7 @@ export default function CombosPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingCombo, setEditingCombo] = useState(null);
   const [activeProviders, setActiveProviders] = useState([]);
+  const [comboStrategies, setComboStrategies] = useState({});
   const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
@@ -22,17 +23,20 @@ export default function CombosPage() {
 
   const fetchData = async () => {
     try {
-      const [combosRes, providersRes] = await Promise.all([
+      const [combosRes, providersRes, settingsRes] = await Promise.all([
         fetch("/api/combos"),
         fetch("/api/providers"),
+        fetch("/api/settings"),
       ]);
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       
       if (combosRes.ok) setCombos(combosData.combos || []);
       if (providersRes.ok) {
         setActiveProviders(providersData.connections || []);
       }
+      setComboStrategies(settingsData.comboStrategies || {});
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
@@ -90,6 +94,27 @@ export default function CombosPage() {
     }
   };
 
+  const handleToggleRoundRobin = async (comboName, enabled) => {
+    try {
+      const updated = { ...comboStrategies };
+      if (enabled) {
+        updated[comboName] = { fallbackStrategy: "round-robin" };
+      } else {
+        delete updated[comboName];
+      }
+      
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comboStrategies: updated }),
+      });
+      
+      setComboStrategies(updated);
+    } catch (error) {
+      console.log("Error updating combo strategy:", error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col gap-6">
@@ -138,6 +163,8 @@ export default function CombosPage() {
               onCopy={copy}
               onEdit={() => setEditingCombo(combo)}
               onDelete={() => handleDelete(combo.id)}
+              roundRobinEnabled={comboStrategies[combo.name]?.fallbackStrategy === "round-robin"}
+              onToggleRoundRobin={(enabled) => handleToggleRoundRobin(combo.name, enabled)}
             />
           ))}
         </div>
@@ -165,7 +192,7 @@ export default function CombosPage() {
   );
 }
 
-function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
+function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled, onToggleRoundRobin }) {
   return (
     <Card padding="sm" className="group">
       <div className="flex items-center justify-between">
@@ -174,23 +201,7 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
             <span className="material-symbols-outlined text-primary text-[18px]">layers</span>
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <code className="text-sm font-medium font-mono truncate">{combo.name}</code>
-              {combo.isFree && (
-                <span className="text-[10px] font-medium text-teal-600 dark:text-teal-400 bg-teal-500/10 px-1.5 py-0.5 rounded-full border border-teal-500/20 whitespace-nowrap">
-                  Unmetered
-                </span>
-              )}
-              <button
-                onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
-                className="p-0.5 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
-                title="Copy combo name"
-              >
-                <span className="material-symbols-outlined text-[14px]">
-                  {copied === `combo-${combo.id}` ? "check" : "content_copy"}
-                </span>
-              </button>
-            </div>
+            <code className="text-sm font-medium font-mono truncate">{combo.name}</code>
             <div className="flex items-center gap-1 mt-0.5 flex-wrap">
               {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
@@ -214,21 +225,45 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
         </div>
 
         {/* Actions */}
-        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-          <button
-            onClick={onEdit}
-            className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors"
-            title="Edit"
-          >
-            <span className="material-symbols-outlined text-[16px]">edit</span>
-          </button>
-          <button
-            onClick={onDelete}
-            className="p-1.5 hover:bg-red-500/10 rounded text-red-500 transition-colors"
-            title="Delete"
-          >
-            <span className="material-symbols-outlined text-[16px]">delete</span>
-          </button>
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Round Robin Toggle — always visible */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-text-muted font-medium">Round Robin</span>
+            <Toggle
+              size="sm"
+              checked={roundRobinEnabled}
+              onChange={onToggleRoundRobin}
+            />
+          </div>
+
+          <div className="flex gap-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
+              className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary transition-colors"
+              title="Copy combo name"
+            >
+              <span className="material-symbols-outlined text-[18px]">
+                {copied === `combo-${combo.id}` ? "check" : "content_copy"}
+              </span>
+              <span className="text-[10px] leading-tight">Copy</span>
+            </button>
+            <button
+              onClick={onEdit}
+              className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary transition-colors"
+              title="Edit"
+            >
+              <span className="material-symbols-outlined text-[18px]">edit</span>
+              <span className="text-[10px] leading-tight">Edit</span>
+            </button>
+            <button
+              onClick={onDelete}
+              className="flex flex-col items-center px-2 py-1 rounded hover:bg-red-500/10 text-red-500 transition-colors"
+              title="Delete"
+            >
+              <span className="material-symbols-outlined text-[18px]">delete</span>
+              <span className="text-[10px] leading-tight">Delete</span>
+            </button>
+          </div>
         </div>
       </div>
     </Card>
@@ -366,7 +401,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
       return false;
     }
     if (!VALID_NAME_REGEX.test(value)) {
-      setNameError("Only letters, numbers, - and _ allowed");
+      setNameError("Only letters, numbers, -, _ and . allowed");
       return false;
     }
     setNameError("");
@@ -437,7 +472,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
               error={nameError}
             />
             <p className="text-[10px] text-text-muted mt-0.5">
-              Only letters, numbers, - and _ allowed
+              Only letters, numbers, -, _ and . allowed
             </p>
           </div>
 

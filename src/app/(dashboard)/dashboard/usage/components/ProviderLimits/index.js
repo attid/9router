@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import Image from "next/image";
-import ProviderLimitCard from "./ProviderLimitCard";
+import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
+import Toggle from "@/shared/components/Toggle";
 import { parseQuotaData, calculatePercentage } from "./utils";
 import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
-import { CardSkeleton } from "@/shared/components/Loading";
+import { EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 
 const REFRESH_INTERVAL_MS = 60000; // 60 seconds
@@ -21,7 +21,12 @@ export default function ProviderLimits() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [countdown, setCountdown] = useState(60);
-  const [initialLoading, setInitialLoading] = useState(true);
+  const [connectionsLoading, setConnectionsLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState(null);
+  const [togglingId, setTogglingId] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedConnection, setSelectedConnection] = useState(null);
+  const [proxyPools, setProxyPools] = useState([]);
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
@@ -31,7 +36,7 @@ export default function ProviderLimits() {
     try {
       const response = await fetch("/api/providers/client");
       if (!response.ok) throw new Error("Failed to fetch connections");
-      
+
       const data = await response.json();
       const connectionList = data.connections || [];
       setConnections(connectionList);
@@ -49,23 +54,30 @@ export default function ProviderLimits() {
     setErrors((prev) => ({ ...prev, [connectionId]: null }));
 
     try {
-      console.log(`[ProviderLimits] Fetching quota for ${provider} (${connectionId})`);
+      console.log(
+        `[ProviderLimits] Fetching quota for ${provider} (${connectionId})`,
+      );
       const response = await fetch(`/api/usage/${connectionId}`);
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const errorMsg = errorData.error || response.statusText;
-        
+
         // Handle different error types gracefully
         if (response.status === 404) {
           // Connection not found - skip silently
-          console.warn(`[ProviderLimits] Connection not found for ${provider}, skipping`);
+          console.warn(
+            `[ProviderLimits] Connection not found for ${provider}, skipping`,
+          );
           return;
         }
-        
+
         if (response.status === 401) {
           // Auth error - show message instead of throwing
-          console.warn(`[ProviderLimits] Auth error for ${provider}:`, errorMsg);
+          console.warn(
+            `[ProviderLimits] Auth error for ${provider}:`,
+            errorMsg,
+          );
           setQuotaData((prev) => ({
             ...prev,
             [connectionId]: {
@@ -75,16 +87,16 @@ export default function ProviderLimits() {
           }));
           return;
         }
-        
+
         throw new Error(`HTTP ${response.status}: ${errorMsg}`);
       }
 
       const data = await response.json();
       console.log(`[ProviderLimits] Got quota for ${provider}:`, data);
-      
+
       // Parse quota data using provider-specific parser
       const parsedQuotas = parseQuotaData(provider, data);
-      
+
       setQuotaData((prev) => ({
         ...prev,
         [connectionId]: {
@@ -95,7 +107,10 @@ export default function ProviderLimits() {
         },
       }));
     } catch (error) {
-      console.error(`[ProviderLimits] Error fetching quota for ${provider} (${connectionId}):`, error);
+      console.error(
+        `[ProviderLimits] Error fetching quota for ${provider} (${connectionId}):`,
+        error,
+      );
       setErrors((prev) => ({
         ...prev,
         [connectionId]: error.message || "Failed to fetch quota",
@@ -111,8 +126,99 @@ export default function ProviderLimits() {
       await fetchQuota(connectionId, provider);
       setLastUpdated(new Date());
     },
-    [fetchQuota]
+    [fetchQuota],
   );
+
+  const handleDeleteConnection = useCallback(async (id) => {
+    if (!confirm("Delete this connection?")) return;
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setConnections((prev) => prev.filter((c) => c.id !== id));
+        setQuotaData((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        setLoading((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        setErrors((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }
+    } catch (error) {
+      console.error("Error deleting connection:", error);
+    } finally {
+      setDeletingId(null);
+    }
+  }, []);
+
+  const handleToggleConnectionActive = useCallback(async (id, isActive) => {
+    setTogglingId(id);
+    try {
+      const res = await fetch(`/api/providers/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive }),
+      });
+      if (res.ok) {
+        setConnections((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, isActive } : c)),
+        );
+      }
+    } catch (error) {
+      console.error("Error updating connection status:", error);
+    } finally {
+      setTogglingId(null);
+    }
+  }, []);
+
+  const handleUpdateConnection = useCallback(
+    async (formData) => {
+      if (!selectedConnection?.id) return;
+      const connectionId = selectedConnection.id;
+      const provider = selectedConnection.provider;
+      try {
+        const res = await fetch(`/api/providers/${connectionId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        });
+        if (res.ok) {
+          await fetchConnections();
+          setShowEditModal(false);
+          setSelectedConnection(null);
+          if (USAGE_SUPPORTED_PROVIDERS.includes(provider)) {
+            await fetchQuota(connectionId, provider);
+          }
+        }
+      } catch (error) {
+        console.error("Error saving connection:", error);
+      }
+    },
+    [selectedConnection, fetchConnections, fetchQuota],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/proxy-pools?isActive=true", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data?.proxyPools) {
+          setProxyPools(data.proxyPools);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Refresh all providers
   const refreshAll = useCallback(async () => {
@@ -123,15 +229,17 @@ export default function ProviderLimits() {
 
     try {
       const conns = await fetchConnections();
-      
+
       // Filter only supported OAuth providers
       const oauthConnections = conns.filter(
-        (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
+        (conn) =>
+          USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) &&
+          conn.authType === "oauth",
       );
-      
+
       // Fetch quota for supported OAuth connections only
       await Promise.all(
-        oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider))
+        oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
       );
 
       setLastUpdated(new Date());
@@ -142,12 +250,30 @@ export default function ProviderLimits() {
     }
   }, [refreshingAll, fetchConnections, fetchQuota]);
 
-  // Initial load
+  // Initial load: fetch connections first so cards render immediately, then fetch quotas
   useEffect(() => {
     const initializeData = async () => {
-      setInitialLoading(true);
-      await refreshAll();
-      setInitialLoading(false);
+      setConnectionsLoading(true);
+      const conns = await fetchConnections();
+      setConnectionsLoading(false);
+
+      const oauthConnections = conns.filter(
+        (conn) =>
+          USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) &&
+          conn.authType === "oauth",
+      );
+
+      // Mark all as loading before fetching
+      const loadingState = {};
+      oauthConnections.forEach((conn) => {
+        loadingState[conn.id] = true;
+      });
+      setLoading(loadingState);
+
+      await Promise.all(
+        oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
+      );
+      setLastUpdated(new Date());
     };
 
     initializeData();
@@ -230,63 +356,40 @@ export default function ProviderLimits() {
   }, [lastUpdated]);
 
   // Filter only supported providers
-  const filteredConnections = connections.filter((conn) =>
-    USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
+  const filteredConnections = connections.filter(
+    (conn) =>
+      USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) &&
+      conn.authType === "oauth",
   );
 
-  // Sort providers: antigravity first, then kiro, then others alphabetically
+  // Sort providers by USAGE_SUPPORTED_PROVIDERS order, then alphabetically
   const sortedConnections = [...filteredConnections].sort((a, b) => {
-    const getProviderPriority = (provider) => {
-      if (provider === "antigravity") return 1;
-      if (provider === "kiro") return 2;
-      return 3;
-    };
-
-    const priorityA = getProviderPriority(a.provider);
-    const priorityB = getProviderPriority(b.provider);
-
-    if (priorityA !== priorityB) {
-      return priorityA - priorityB;
-    }
-
-    // Same priority: sort alphabetically
+    const orderA = USAGE_SUPPORTED_PROVIDERS.indexOf(a.provider);
+    const orderB = USAGE_SUPPORTED_PROVIDERS.indexOf(b.provider);
+    if (orderA !== orderB) return orderA - orderB;
     return a.provider.localeCompare(b.provider);
   });
 
   // Calculate summary stats
   const totalProviders = sortedConnections.length;
   const activeWithLimits = Object.values(quotaData).filter(
-    (data) => data?.quotas?.length > 0
+    (data) => data?.quotas?.length > 0,
   ).length;
-  
+
   // Count low quotas (remaining < 30%)
   const lowQuotasCount = Object.values(quotaData).reduce((count, data) => {
     if (!data?.quotas) return count;
-    
+
     const hasLowQuota = data.quotas.some((quota) => {
       const percentage = calculatePercentage(quota.used, quota.total);
       return percentage < 30 && quota.total > 0;
     });
-    
+
     return count + (hasLowQuota ? 1 : 0);
   }, 0);
 
-  // Initial loading state
-  if (initialLoading) {
-    return (
-      <div className="space-y-4">
-        <CardSkeleton />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <CardSkeleton />
-          <CardSkeleton />
-          <CardSkeleton />
-        </div>
-      </div>
-    );
-  }
-
   // Empty state
-  if (sortedConnections.length === 0) {
+  if (!connectionsLoading && sortedConnections.length === 0) {
     return (
       <Card padding="lg">
         <div className="text-center py-12">
@@ -297,7 +400,8 @@ export default function ProviderLimits() {
             No Providers Connected
           </h3>
           <p className="mt-2 text-sm text-text-muted max-w-md mx-auto">
-            Connect to providers with OAuth to track your API quota limits and usage.
+            Connect to providers with OAuth to track your API quota limits and
+            usage.
           </p>
         </div>
       </Card>
@@ -351,78 +455,148 @@ export default function ProviderLimits() {
         </div>
       </div>
 
-      {/* Provider Cards Grid */}
-      <div className="flex flex-col gap-4">
+      {/* Provider cards: 2 columns, compact */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {sortedConnections.map((conn) => {
           const quota = quotaData[conn.id];
           const isLoading = loading[conn.id];
           const error = errors[conn.id];
 
           // Use table layout for all providers
+          const isInactive = conn.isActive === false;
+          const rowBusy = deletingId === conn.id || togglingId === conn.id;
+
           return (
-            <Card key={conn.id} padding="none">
-              <div className="p-6 border-b border-black/10 dark:border-white/10">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden">
-                      <Image
+            <Card
+              key={conn.id}
+              padding="none"
+              className={`min-w-0 ${isInactive ? "opacity-60" : ""}`}
+            >
+              <div className="px-4 py-3 border-b border-black/10 dark:border-white/10">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-8 h-8 shrink-0 rounded-md flex items-center justify-center overflow-hidden">
+                      <ProviderIcon
                         src={`/providers/${conn.provider}.png`}
                         alt={conn.provider}
-                        width={40}
-                        height={40}
+                        size={32}
                         className="object-contain"
-                        sizes="40px"
+                        fallbackText={
+                          conn.provider?.slice(0, 2).toUpperCase() || "PR"
+                        }
                       />
                     </div>
-                    <div>
-                      <h3 className="text-base font-semibold text-text-primary capitalize">
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-semibold text-text-primary capitalize truncate">
                         {conn.provider}
                       </h3>
                       {conn.name && (
-                        <p className="text-sm text-text-muted">{conn.name}</p>
+                        <p className="text-xs text-text-muted truncate">
+                          {conn.name}
+                        </p>
                       )}
                     </div>
                   </div>
-                  
-                  <button
-                    onClick={() => refreshProvider(conn.id, conn.provider)}
-                    disabled={isLoading}
-                    className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
-                    title="Refresh quota"
-                  >
-                    <span className={`material-symbols-outlined text-[20px] text-text-muted ${isLoading ? "animate-spin" : ""}`}>
-                      refresh
-                    </span>
-                  </button>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => refreshProvider(conn.id, conn.provider)}
+                      disabled={isLoading || rowBusy}
+                      className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+                      title="Refresh quota"
+                    >
+                      <span
+                        className={`material-symbols-outlined text-[18px] text-text-muted ${isLoading ? "animate-spin" : ""}`}
+                      >
+                        refresh
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedConnection(conn);
+                        setShowEditModal(true);
+                      }}
+                      disabled={rowBusy}
+                      className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary transition-colors disabled:opacity-50"
+                      title="Edit connection"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">
+                        edit
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteConnection(conn.id)}
+                      disabled={rowBusy}
+                      className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500 transition-colors disabled:opacity-50"
+                      title="Delete connection"
+                    >
+                      <span
+                        className={`material-symbols-outlined text-[18px] ${deletingId === conn.id ? "animate-pulse" : ""}`}
+                      >
+                        delete
+                      </span>
+                    </button>
+                    <div
+                      className="inline-flex items-center pl-0.5"
+                      title={
+                        (conn.isActive ?? true)
+                          ? "Disable connection"
+                          : "Enable connection"
+                      }
+                    >
+                      <Toggle
+                        size="sm"
+                        checked={conn.isActive ?? true}
+                        disabled={rowBusy}
+                        onChange={(nextActive) =>
+                          handleToggleConnectionActive(conn.id, nextActive)
+                        }
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="p-6">
+              <div className="px-3 py-3">
                 {isLoading ? (
-                  <div className="text-center py-8 text-text-muted">
-                    <span className="material-symbols-outlined text-[32px] animate-spin">
+                  <div className="text-center py-5 text-text-muted">
+                    <span className="material-symbols-outlined text-[28px] animate-spin">
                       progress_activity
                     </span>
                   </div>
                 ) : error ? (
-                  <div className="text-center py-8">
-                    <span className="material-symbols-outlined text-[32px] text-red-500">
+                  <div className="text-center py-5">
+                    <span className="material-symbols-outlined text-[28px] text-red-500">
                       error
                     </span>
-                    <p className="mt-2 text-sm text-text-muted">{error}</p>
+                    <p className="mt-1.5 text-xs text-text-muted">{error}</p>
                   </div>
                 ) : quota?.message ? (
-                  <div className="text-center py-8">
-                    <p className="text-sm text-text-muted">{quota.message}</p>
+                  <div className="text-center py-5">
+                    <p className="text-xs text-text-muted">{quota.message}</p>
                   </div>
                 ) : (
-                  <QuotaTable quotas={quota?.quotas} />
+                  <QuotaTable quotas={quota?.quotas} compact />
                 )}
               </div>
             </Card>
           );
         })}
       </div>
+
+      <EditConnectionModal
+        isOpen={showEditModal}
+        connection={selectedConnection}
+        proxyPools={proxyPools}
+        onSave={handleUpdateConnection}
+        onClose={() => {
+          setShowEditModal(false);
+          setSelectedConnection(null);
+        }}
+      />
     </div>
   );
 }

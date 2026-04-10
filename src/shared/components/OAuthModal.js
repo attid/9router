@@ -10,7 +10,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
  * - Localhost: Auto callback via popup message
  * - Remote: Manual paste callback URL
  */
-export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose }) {
+export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta }) {
   const [step, setStep] = useState("waiting"); // waiting | input | success | error
   const [authData, setAuthData] = useState(null);
   const [callbackUrl, setCallbackUrl] = useState("");
@@ -19,6 +19,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [deviceData, setDeviceData] = useState(null);
   const [polling, setPolling] = useState(false);
   const popupRef = useRef(null);
+  const pollingAbortRef = useRef(false);
   const { copied, copy } = useCopyToClipboard();
 
   // State for client-only values to avoid hydration mismatch
@@ -50,6 +51,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           redirectUri: authData.redirectUri,
           codeVerifier: authData.codeVerifier,
           state,
+          ...(oauthMeta ? { meta: oauthMeta } : {}),
         }),
       });
 
@@ -66,11 +68,26 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
   // Poll for device code token
   const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData) => {
+    pollingAbortRef.current = false;
     setPolling(true);
     const maxAttempts = 60;
 
     for (let i = 0; i < maxAttempts; i++) {
+      // Check if polling should be aborted
+      if (pollingAbortRef.current) {
+        console.log("[OAuthModal] Polling aborted");
+        setPolling(false);
+        return;
+      }
+
       await new Promise((r) => setTimeout(r, interval * 1000));
+
+      // Check again after sleep
+      if (pollingAbortRef.current) {
+        console.log("[OAuthModal] Polling aborted after sleep");
+        setPolling(false);
+        return;
+      }
 
       try {
         const res = await fetch(`/api/oauth/${provider}/poll`, {
@@ -82,6 +99,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const data = await res.json();
 
         if (data.success) {
+          pollingAbortRef.current = true; // Stop polling immediately
           setStep("success");
           setPolling(false);
           onSuccess?.();
@@ -115,7 +133,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(null);
 
       // Device code flow providers
-      const deviceCodeProviders = ["github", "qwen", "kiro", "kimi-coding", "kilocode"];
+      const deviceCodeProviders = ["github", "qwen", "kiro", "kimi-coding", "kilocode", "codebuddy"];
       if (deviceCodeProviders.includes(provider)) {
         setIsDeviceCode(true);
         setStep("waiting");
@@ -136,18 +154,24 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         return;
       }
 
-      // Authorization code flow - always use localhost with current port (except Codex)
+      // Authorization code flow - build redirect URI (some providers require fixed ports)
       let redirectUri;
       if (provider === "codex") {
         // Codex requires fixed port 1455
         redirectUri = "http://localhost:1455/auth/callback";
       } else {
-        // Always use localhost with current port for OAuth callback
+        // Use app's current port for OAuth callback
         const port = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
         redirectUri = `http://localhost:${port}/callback`;
       }
 
-      const res = await fetch(`/api/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`);
+      // Build authorize URL, optionally passing provider-specific metadata (e.g. gitlab clientId)
+      const authorizeUrl = new URL(`/api/oauth/${provider}/authorize`, window.location.origin);
+      authorizeUrl.searchParams.set("redirect_uri", redirectUri);
+      if (oauthMeta) {
+        Object.entries(oauthMeta).forEach(([k, v]) => { if (v) authorizeUrl.searchParams.set(k, v); });
+      }
+      const res = await fetch(authorizeUrl.toString());
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
@@ -182,7 +206,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setIsDeviceCode(false);
       setDeviceData(null);
       setPolling(false);
+      pollingAbortRef.current = false;
       startOAuthFlow();
+    } else if (!isOpen) {
+      // Abort polling when modal closes
+      pollingAbortRef.current = true;
     }
   }, [isOpen, provider, startOAuthFlow]);
 
@@ -441,9 +469,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 OAuthModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   provider: PropTypes.string,
-  providerInfo: PropTypes.shape({
-    name: PropTypes.string,
-  }),
+  providerInfo: PropTypes.shape({ name: PropTypes.string }),
   onSuccess: PropTypes.func,
   onClose: PropTypes.func.isRequired,
+  /** Extra metadata passed to /authorize and /exchange (e.g. gitlab clientId/baseUrl) */
+  oauthMeta: PropTypes.object,
 };

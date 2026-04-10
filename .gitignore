@@ -16,7 +16,7 @@
 # next.js
 /.next/
 /out/
-
+product
 # production
 /build
 
@@ -55,7 +55,6 @@ RM.vn.md
 RM.md
 cursor/*
 PUBLIC.md
-scripts/*
 Thanks.md
 PUBLIC.en.md
 PR/*
@@ -65,6 +64,6 @@ package-lock.json
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
 README1.md
-deploy.sh
+deploy*.sh
 ecosystem.config.*
-start.sh
+

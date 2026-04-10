@@ -13,59 +13,41 @@ const stickyMap = new Map();
 const STICKY_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
- * Build weighted cycle array from models with weight > 0.
- * E.g. [{model:"A", weight:2}, {model:"B", weight:1}] → ["A", "A", "B"]
+ * Track rotation state per combo (for round-robin strategy)
+ * @type {Map<string, number>}
  */
-export function buildWeightedCycle(models) {
-  const cycle = [];
-  for (const m of models) {
-    for (let i = 0; i < (m.weight || 0); i++) {
-      cycle.push(m.model);
-    }
-  }
-  return cycle;
-}
+const comboRotationState = new Map();
 
 /**
- * Pick next model from cycle using round-robin counter.
+ * Get rotated model list based on strategy
+ * @param {string[]} models - Array of model strings
+ * @param {string} comboName - Name of the combo
+ * @param {string} strategy - "fallback" or "round-robin"
+ * @returns {string[]} Rotated models array
  */
-export function pickNextModel(comboName, cycle, counters = rrCounters) {
-  const idx = counters.get(comboName) || 0;
-  const model = cycle[idx % cycle.length];
-  counters.set(comboName, idx + 1);
-  return model;
-}
-
-/**
- * Pick a model with per-apiKey sticky routing (5-min window).
- * Returns the same model for the same apiKey within the TTL.
- * Falls back to round-robin when no apiKey or TTL expired.
- */
-export function pickStickyModel(comboName, cycle, apiKey) {
-  if (!apiKey) return pickNextModel(comboName, cycle);
-
-  const stickyKey = `${comboName}|${apiKey}`;
-  const entry = stickyMap.get(stickyKey);
-  const now = Date.now();
-
-  if (entry && (now - entry.assignedAt) < STICKY_TTL_MS && cycle.includes(entry.model)) {
-    return entry.model;
+export function getRotatedModels(models, comboName, strategy) {
+  if (!models || models.length <= 1 || strategy !== "round-robin") {
+    return models;
   }
 
-  const model = pickNextModel(comboName, cycle);
-  stickyMap.set(stickyKey, { model, assignedAt: now });
-  return model;
+  const currentIndex = comboRotationState.get(comboName) || 0;
+  const rotatedModels = [...models];
+  
+  // Rotate: move models from currentIndex to front, preserving order after
+  for (let i = 0; i < currentIndex; i++) {
+    const moved = rotatedModels.shift();
+    rotatedModels.push(moved);
+  }
+  
+  // Update state for next request (cycle through all models)
+  const nextIndex = (currentIndex + 1) % models.length;
+  comboRotationState.set(comboName, nextIndex);
+  
+  return rotatedModels;
 }
 
 /**
- * Clear sticky entry for a specific combo+apiKey (on fallback).
- */
-export function clearSticky(comboName, apiKey) {
-  if (apiKey) stickyMap.delete(`${comboName}|${apiKey}`);
-}
-
-/**
- * Get combo models from combos data (backward compatible).
+ * Get combo models from combos data
  * @param {string} modelStr - Model string to check
  * @param {Array|Object} combosData - Array of combos or object with combos
  * @returns {{model: string, weight: number}[]|null} Array of model objects or null
@@ -87,53 +69,24 @@ export function getComboModelsFromData(modelStr, combosData) {
  * Handle combo chat with weighted round-robin + fallback.
  * @param {Object} options
  * @param {Object} options.body - Request body
- * @param {{model: string, weight: number}[]} options.models - Array of model objects
- * @param {string} [options.comboName] - Combo name (for round-robin counter)
- * @param {string} [options.apiKey] - API key for sticky routing
- * @param {Function} options.handleSingleModel - (body, modelStr) => Promise<Response>
- * @param {Object} options.log - Logger
+ * @param {string[]} options.models - Array of model strings to try
+ * @param {Function} options.handleSingleModel - Function to handle single model: (body, modelStr) => Promise<Response>
+ * @param {Object} options.log - Logger object
+ * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
+ * @param {string} [options.comboStrategy] - Strategy: "fallback" or "round-robin"
+ * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, comboName, apiKey, handleSingleModel, log }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy }) {
+  // Apply rotation strategy if enabled
+  const rotatedModels = getRotatedModels(models, comboName, comboStrategy);
+  
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
 
-  // Split into balanced pool and fallback list
-  const balancePool = models.filter(m => m.weight > 0);
-  const fallbackList = models.filter(m => m.weight === 0);
-
-  // Build ordered try-list
-  const tryList = [];
-
-  if (balancePool.length > 0 && comboName) {
-    const cycle = buildWeightedCycle(balancePool);
-    if (cycle.length > 0) {
-      const picked = apiKey ? pickStickyModel(comboName, cycle, apiKey) : pickNextModel(comboName, cycle);
-      // Start with picked, then other pool models, then fallback
-      tryList.push(picked);
-      for (const m of balancePool) {
-        if (m.model !== picked && !tryList.includes(m.model)) {
-          tryList.push(m.model);
-        }
-      }
-    }
-  }
-
-  // If no balanced models (all weight 0, or no comboName), use all models in order
-  if (tryList.length === 0) {
-    for (const m of models) {
-      tryList.push(m.model);
-    }
-  } else {
-    // Add fallback models at the end
-    for (const m of fallbackList) {
-      tryList.push(m.model);
-    }
-  }
-
-  for (let i = 0; i < tryList.length; i++) {
-    const modelStr = tryList[i];
-    log.info("COMBO", `Trying model ${i + 1}/${tryList.length}: ${modelStr}`);
+  for (let i = 0; i < rotatedModels.length; i++) {
+    const modelStr = rotatedModels[i];
+    log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
       const result = await handleSingleModel(body, modelStr);
@@ -161,13 +114,24 @@ export async function handleComboChat({ body, models, comboName, apiKey, handleS
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
       }
 
-      const { shouldFallback } = checkFallbackError(result.status, errorText);
+      // Check if should fallback to next model
+      const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
 
       if (!shouldFallback) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
         return result;
       }
 
+      // For transient errors (503/502/504), wait for cooldown before falling through
+      // so a briefly-overloaded provider gets a chance to recover rather than being
+      // skipped immediately (fixes: combo falls through on transient 503)
+      if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
+          (result.status === 503 || result.status === 502 || result.status === 504)) {
+        log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
+        await new Promise(r => setTimeout(r, cooldownMs));
+      }
+
+      // Fallback to next model
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
       // Clear sticky so next request picks a different model
@@ -181,7 +145,12 @@ export async function handleComboChat({ body, models, comboName, apiKey, handleS
     }
   }
 
-  const status = 406;
+  // All models failed
+  // Use 503 (Service Unavailable) rather than 406 (Not Acceptable) — 406 implies
+  // the request itself is invalid, but here the providers are simply unavailable
+  // or have no active credentials. 503 is more accurate and retryable by clients.
+  const allDisabled = lastError && lastError.toLowerCase().includes("no credentials");
+  const status = allDisabled ? 503 : (lastStatus || 503);
   const msg = lastError || "All combo models unavailable";
 
   if (earliestRetryAfter) {
