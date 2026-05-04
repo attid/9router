@@ -5,6 +5,7 @@ import { getServerCredentials } from "../config/index.js";
 import { startLocalServer } from "../utils/server.js";
 import { generatePKCE } from "../utils/pkce.js";
 import { spinner as createSpinner } from "../utils/ui.js";
+import { absoluteApiUrl } from "../../basePath.js";
 
 /**
  * Codex (OpenAI) OAuth Service
@@ -43,7 +44,7 @@ export class CodexService extends OAuthService {
   async saveTokens(tokens) {
     const { server, token, userId } = getServerCredentials();
 
-    const response = await fetch(`${server}/api/cli/providers/codex`, {
+    const response = await fetch(absoluteApiUrl(server, "/api/cli/providers/codex"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -141,4 +142,3 @@ export class CodexService extends OAuthService {
     }
   }
 }
-

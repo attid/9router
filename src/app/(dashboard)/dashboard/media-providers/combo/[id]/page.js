@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Card, Button, Input, Toggle, ModelSelectModal } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { AI_PROVIDERS, MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
+import { apiPath } from "@/lib/basePath";
 
 // Parse "providerId/model" or just "providerId" → { providerId, model }
 function parseModelEntry(entry) {
@@ -65,12 +66,12 @@ export default function ComboDetailPage() {
   const fetchAll = async () => {
     try {
       const [comboRes, settingsRes, logsRes, keysRes, connsRes, aliasesRes] = await Promise.all([
-        fetch(`/api/combos/${id}`, { cache: "no-store" }),
-        fetch("/api/settings", { cache: "no-store" }),
-        fetch("/api/usage/logs", { cache: "no-store" }),
-        fetch("/api/keys", { cache: "no-store" }),
-        fetch("/api/providers", { cache: "no-store" }),
-        fetch("/api/models/alias", { cache: "no-store" }),
+        fetch(apiPath(`/api/combos/${id}`), { cache: "no-store" }),
+        fetch(apiPath("/api/settings"), { cache: "no-store" }),
+        fetch(apiPath("/api/usage/logs"), { cache: "no-store" }),
+        fetch(apiPath("/api/keys"), { cache: "no-store" }),
+        fetch(apiPath("/api/providers"), { cache: "no-store" }),
+        fetch(apiPath("/api/models/alias"), { cache: "no-store" }),
       ]);
       if (aliasesRes.ok) setModelAliases((await aliasesRes.json()).aliases || {});
       if (keysRes.ok) {
@@ -102,7 +103,7 @@ export default function ComboDetailPage() {
   };
 
   const saveCombo = async (patch) => {
-    const res = await fetch(`/api/combos/${id}`, {
+    const res = await fetch(apiPath(`/api/combos/${id}`), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
@@ -143,12 +144,12 @@ export default function ComboDetailPage() {
 
   const handleToggleRoundRobin = async (enabled) => {
     setRoundRobin(enabled);
-    const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+    const settingsRes = await fetch(apiPath("/api/settings"), { cache: "no-store" });
     const s = settingsRes.ok ? await settingsRes.json() : {};
     const updated = { ...(s.comboStrategies || {}) };
     if (enabled) updated[combo.name] = { fallbackStrategy: "round-robin" };
     else delete updated[combo.name];
-    await fetch("/api/settings", {
+    await fetch(apiPath("/api/settings"), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ comboStrategies: updated }),
@@ -157,7 +158,7 @@ export default function ComboDetailPage() {
 
   const handleDelete = async () => {
     if (!confirm(`Delete combo "${combo.name}"?`)) return;
-    const res = await fetch(`/api/combos/${id}`, { method: "DELETE" });
+    const res = await fetch(apiPath(`/api/combos/${id}`), { method: "DELETE" });
     if (res.ok) router.push(getListingHref(combo.kind));
   };
 
@@ -292,7 +293,7 @@ export default function ComboDetailPage() {
                 <div key={`${entry}-${idx}`} className="flex items-center gap-3 p-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02]">
                   <span className="text-xs text-text-muted w-5 text-center">{idx + 1}</span>
                   <ProviderIcon
-                    src={`/providers/${providerId}.png`}
+                    src={apiPath(`/providers/${providerId}.png`)}
                     alt={p?.name || providerId}
                     size={24}
                     className="object-contain rounded shrink-0"

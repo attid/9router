@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Card, ModelSelectModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Image from "next/image";
+import { apiPath } from "@/lib/basePath";
 
 export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders = [], cloudEnabled = false, tunnelEnabled = false }) {
   const [copiedField, setCopiedField] = useState(null);
@@ -250,7 +251,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
     }
     return (
       <Image
-        src={`/providers/${toolId}.png`}
+        src={apiPath(`/providers/${toolId}.png`)}
         alt={tool.name}
         width={32}
         height={32}

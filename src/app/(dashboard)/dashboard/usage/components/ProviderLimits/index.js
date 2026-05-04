@@ -8,6 +8,7 @@ import { parseQuotaData, calculatePercentage } from "./utils";
 import Card from "@/shared/components/Card";
 import { EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { apiPath } from "@/lib/basePath";
 
 const REFRESH_INTERVAL_MS = 60000; // 60 seconds
 const DEPLETED_QUOTA_THRESHOLD = 5; // percent
@@ -43,7 +44,7 @@ export default function ProviderLimits() {
   // Fetch all provider connections
   const fetchConnections = useCallback(async () => {
     try {
-      const response = await fetch("/api/providers/client");
+      const response = await fetch(apiPath("/api/providers/client"));
       if (!response.ok) throw new Error("Failed to fetch connections");
 
       const data = await response.json();
@@ -66,7 +67,7 @@ export default function ProviderLimits() {
       console.log(
         `[ProviderLimits] Fetching quota for ${provider} (${connectionId})`,
       );
-      const response = await fetch(`/api/usage/${connectionId}`);
+      const response = await fetch(apiPath(`/api/usage/${connectionId}`));
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -142,7 +143,7 @@ export default function ProviderLimits() {
     if (!confirm("Delete this connection?")) return;
     setDeletingId(id);
     try {
-      const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
+      const res = await fetch(apiPath(`/api/providers/${id}`), { method: "DELETE" });
       if (res.ok) {
         setConnections((prev) => prev.filter((c) => c.id !== id));
         setQuotaData((prev) => {
@@ -171,7 +172,7 @@ export default function ProviderLimits() {
   const handleToggleConnectionActive = useCallback(async (id, isActive) => {
     setTogglingId(id);
     try {
-      const res = await fetch(`/api/providers/${id}`, {
+      const res = await fetch(apiPath(`/api/providers/${id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive }),
@@ -194,7 +195,7 @@ export default function ProviderLimits() {
       const connectionId = selectedConnection.id;
       const provider = selectedConnection.provider;
       try {
-        const res = await fetch(`/api/providers/${connectionId}`, {
+        const res = await fetch(apiPath(`/api/providers/${connectionId}`), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(formData),
@@ -216,7 +217,7 @@ export default function ProviderLimits() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/proxy-pools?isActive=true", { cache: "no-store" })
+    fetch(apiPath("/api/proxy-pools?isActive=true"), { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => {
         if (!cancelled && data?.proxyPools) {
@@ -402,7 +403,7 @@ export default function ProviderLimits() {
       try {
         await Promise.all(
           targetIds.map((id) =>
-            fetch(`/api/providers/${id}`, {
+            fetch(apiPath(`/api/providers/${id}`), {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ isActive }),
@@ -501,7 +502,7 @@ export default function ProviderLimits() {
                   <span className="material-symbols-outlined text-[14px] text-text-muted">apps</span>
                 ) : (
                   <ProviderIcon
-                    src={`/providers/${providerFilter}.png`}
+                    src={apiPath(`/providers/${providerFilter}.png`)}
                     alt={providerFilter}
                     size={18}
                     className="size-[18px] rounded object-contain"
@@ -541,7 +542,7 @@ export default function ProviderLimits() {
                         className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${providerFilter === provider ? "bg-primary/10 text-primary" : "text-text-primary hover:bg-black/5 dark:hover:bg-white/10"}`}
                       >
                         <ProviderIcon
-                          src={`/providers/${provider}.png`}
+                          src={apiPath(`/providers/${provider}.png`)}
                           alt={provider}
                           size={24}
                           className="size-6 rounded-md object-contain"
@@ -644,7 +645,7 @@ export default function ProviderLimits() {
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="w-8 h-8 shrink-0 rounded-md flex items-center justify-center overflow-hidden">
                       <ProviderIcon
-                        src={`/providers/${conn.provider}.png`}
+                        src={apiPath(`/providers/${conn.provider}.png`)}
                         alt={conn.provider}
                         size={32}
                         className="object-contain"

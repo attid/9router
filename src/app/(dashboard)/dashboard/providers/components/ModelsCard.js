@@ -6,6 +6,7 @@ import { Card, Button, Modal } from "@/shared/components";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { apiPath } from "@/lib/basePath";
 
 // ── ModelRow ───────────────────────────────────────────────────
 export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting }) {
@@ -124,9 +125,9 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
   const fetchData = useCallback(async () => {
     try {
       const [aliasRes, connRes, customRes] = await Promise.all([
-        fetch("/api/models/alias"),
-        fetch("/api/providers", { cache: "no-store" }),
-        fetch("/api/models/custom", { cache: "no-store" }),
+        fetch(apiPath("/api/models/alias")),
+        fetch(apiPath("/api/providers"), { cache: "no-store" }),
+        fetch(apiPath("/api/models/custom"), { cache: "no-store" }),
       ]);
       const aliasData = await aliasRes.json();
       const connData = await connRes.json();
@@ -142,7 +143,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
   const handleSetAlias = async (modelId, alias) => {
     const fullModel = `${providerAlias}/${modelId}`;
     try {
-      const res = await fetch("/api/models/alias", {
+      const res = await fetch(apiPath("/api/models/alias"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: fullModel, alias }),
@@ -153,14 +154,14 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
 
   const handleDeleteAlias = async (alias) => {
     try {
-      const res = await fetch(`/api/models/alias?alias=${encodeURIComponent(alias)}`, { method: "DELETE" });
+      const res = await fetch(apiPath(`/api/models/alias?alias=${encodeURIComponent(alias)}`), { method: "DELETE" });
       if (res.ok) await fetchData();
     } catch (e) { console.log("delete alias error:", e); }
   };
 
   const handleAddCustomModel = async (modelId) => {
     try {
-      const res = await fetch("/api/models/custom", {
+      const res = await fetch(apiPath("/api/models/custom"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ providerAlias, id: modelId, type: effectiveType }),
@@ -172,7 +173,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
   const handleDeleteCustomModel = async (modelId) => {
     try {
       const params = new URLSearchParams({ providerAlias, id: modelId, type: effectiveType });
-      const res = await fetch(`/api/models/custom?${params}`, { method: "DELETE" });
+      const res = await fetch(apiPath(`/api/models/custom?${params}`), { method: "DELETE" });
       if (res.ok) await fetchData();
     } catch (e) { console.log("delete custom model error:", e); }
   };
@@ -181,7 +182,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
     if (testingModelId) return;
     setTestingModelId(modelId);
     try {
-      const res = await fetch("/api/models/test", {
+      const res = await fetch(apiPath("/api/models/test"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: `${providerAlias}/${modelId}`, kind: kindFilter }),

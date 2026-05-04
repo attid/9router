@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
+import { apiPath } from "@/lib/basePath";
 
 /**
  * Cursor Auth Modal
@@ -24,7 +25,7 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
     setWindowsManual(false);
 
     try {
-      const res = await fetch("/api/oauth/cursor/auto-import");
+      const res = await fetch(apiPath("/api/oauth/cursor/auto-import"));
       const data = await res.json();
 
       if (data.found) {
@@ -64,7 +65,7 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
     setError(null);
 
     try {
-      const res = await fetch("/api/oauth/cursor/import", {
+      const res = await fetch(apiPath("/api/oauth/cursor/import"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

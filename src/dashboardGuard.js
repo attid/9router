@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { jwtVerify } from "jose";
-import { getSettings } from "@/lib/localDb";
-import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { getSettings } from "./lib/localDb.js";
+import { getConsistentMachineId } from "./shared/utils/machineId.js";
+import { dashboardPath } from "./lib/basePath.js";
 
 const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "9router-default-secret-change-me"
@@ -28,13 +29,24 @@ const ALWAYS_PROTECTED = [
   "/api/settings/database",
 ];
 
-// Require auth, but allow through if requireLogin is disabled
-const PROTECTED_API_PATHS = [
-  "/api/settings",
-  "/api/keys",
-  "/api/providers/client",
-  "/api/provider-nodes/validate",
+// Public API paths — everything else under /api/ is protected by default
+const PUBLIC_API_PATHS = [
+  "/api/v1/",
+  "/api/v1beta/",
+  "/api/cloud/",
+  "/api/auth/login",
+  "/api/auth/logout",
+  "/api/oauth/",
+  "/api/version",
+  "/api/init",
+  "/api/settings/require-login",
 ];
+
+function isPublicApi(pathname) {
+  return PUBLIC_API_PATHS.some(
+    (prefix) => pathname === prefix || pathname.startsWith(prefix)
+  );
+}
 
 async function hasValidToken(request) {
   const token = request.cookies.get("auth_token")?.value;
@@ -73,9 +85,8 @@ export async function proxy(request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Protect sensitive API endpoints (allow CLI token, JWT, or requireLogin=false)
-  if (PROTECTED_API_PATHS.some((p) => pathname.startsWith(p))) {
-    if (pathname === "/api/settings/require-login") return NextResponse.next();
+  // Protect all API endpoints except public ones
+  if (pathname.startsWith("/api/") && !isPublicApi(pathname)) {
     if (await hasValidCliToken(request) || await isAuthenticated(request))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -98,7 +109,7 @@ export async function proxy(request) {
           const tunnelHost = settings.tunnelUrl ? new URL(settings.tunnelUrl).hostname.toLowerCase() : "";
           const tailscaleHost = settings.tailscaleUrl ? new URL(settings.tailscaleUrl).hostname.toLowerCase() : "";
           if ((tunnelHost && host === tunnelHost) || (tailscaleHost && host === tailscaleHost)) {
-            return NextResponse.redirect(new URL("/login", request.url));
+            return NextResponse.redirect(new URL(dashboardPath("/login"), request.url));
           }
         }
       }
@@ -116,21 +127,21 @@ export async function proxy(request) {
         await jwtVerify(token, SECRET);
         return NextResponse.next();
       } catch {
-        return NextResponse.redirect(new URL("/login", request.url));
+        return NextResponse.redirect(new URL(dashboardPath("/login"), request.url));
       }
     }
 
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(new URL(dashboardPath("/login"), request.url));
   }
 
-  // Redirect / to /dashboard if logged in, or /dashboard if it's the root
+  // Redirect / to /dashboard
   if (pathname === "/") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return NextResponse.redirect(new URL(dashboardPath("/dashboard"), request.url));
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/", "/dashboard/:path*"],
+  matcher: ["/", "/api/:path*", "/dashboard/:path*"],
 };

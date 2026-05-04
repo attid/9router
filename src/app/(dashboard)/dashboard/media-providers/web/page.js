@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Card, Badge, Button } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { AI_PROVIDERS, getProvidersByKind } from "@/shared/constants/providers";
+import { apiPath } from "@/lib/basePath";
 
 function getEffectiveStatus(conn) {
   const isCooldown = Object.entries(conn).some(
@@ -45,7 +46,7 @@ function ProviderCard({ provider, kind, connections }) {
             style={{ backgroundColor: `${provider.color?.length > 7 ? provider.color : (provider.color ?? "#888") + "15"}` }}
           >
             <ProviderIcon
-              src={`/providers/${provider.id}.png`}
+              src={apiPath(`/providers/${provider.id}.png`)}
               alt={provider.name}
               size={30}
               className="object-contain rounded-lg max-w-[30px] max-h-[30px]"
@@ -83,7 +84,7 @@ function ComboList({ combos }) {
                   return (
                     <div key={`${entry}-${i}`} title={p?.name || entry} className="size-5 rounded flex items-center justify-center" style={{ backgroundColor: `${(p?.color ?? "#888")}15` }}>
                       <ProviderIcon
-                        src={`/providers/${pid}.png`}
+                        src={apiPath(`/providers/${pid}.png`)}
                         alt={p?.name || pid}
                         size={18}
                         className="object-contain rounded max-w-[18px] max-h-[18px]"
@@ -151,8 +152,8 @@ export default function WebProvidersPage() {
   const fetchAll = async () => {
     try {
       const [connsRes, combosRes] = await Promise.all([
-        fetch("/api/providers", { cache: "no-store" }),
-        fetch("/api/combos", { cache: "no-store" }),
+        fetch(apiPath("/api/providers"), { cache: "no-store" }),
+        fetch(apiPath("/api/combos"), { cache: "no-store" }),
       ]);
       if (connsRes.ok) setConnections((await connsRes.json()).connections || []);
       if (combosRes.ok) setCombos((await combosRes.json()).combos || []);
@@ -174,7 +175,7 @@ export default function WebProvidersPage() {
     let i = 1;
     const existing = new Set(combos.map((c) => c.name));
     while (existing.has(name)) { name = `${base}-${i++}`; }
-    const res = await fetch("/api/combos", {
+    const res = await fetch(apiPath("/api/combos"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, models: [], kind }),

@@ -3,6 +3,7 @@ import { QWEN_CONFIG } from "../constants/oauth.js";
 import { getServerCredentials } from "../config/index.js";
 import { generatePKCE } from "../utils/pkce.js";
 import { spinner as createSpinner } from "../utils/ui.js";
+import { absoluteApiUrl } from "../../basePath.js";
 
 /**
  * Qwen OAuth Service
@@ -92,7 +93,7 @@ export class QwenService {
   async saveTokens(tokens) {
     const { server, token, userId } = getServerCredentials();
 
-    const response = await fetch(`${server}/api/cli/providers/qwen`, {
+    const response = await fetch(absoluteApiUrl(server, "/api/cli/providers/qwen"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -167,4 +168,3 @@ export class QwenService {
     }
   }
 }
-

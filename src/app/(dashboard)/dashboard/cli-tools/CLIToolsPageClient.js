@@ -6,6 +6,7 @@ import { CLI_TOOLS } from "@/shared/constants/cliTools";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, HermesToolCard, DefaultToolCard, OpenCodeToolCard, MitmLinkCard } from "./components";
 import { MITM_TOOLS } from "@/shared/constants/cliTools";
+import { apiPath } from "@/lib/basePath";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
 
@@ -59,8 +60,8 @@ export default function CLIToolsPageClient({ machineId }) {
   const loadCloudSettings = async () => {
     try {
       const [settingsRes, tunnelRes] = await Promise.all([
-        fetch("/api/settings"),
-        fetch("/api/tunnel/status"),
+        fetch(apiPath("/api/settings")),
+        fetch(apiPath("/api/tunnel/status")),
       ]);
       if (settingsRes.ok) {
         const data = await settingsRes.json();
@@ -78,7 +79,7 @@ export default function CLIToolsPageClient({ machineId }) {
 
   const fetchApiKeys = async () => {
     try {
-      const res = await fetch("/api/keys");
+      const res = await fetch(apiPath("/api/keys"));
       if (res.ok) {
         const data = await res.json();
         setApiKeys(data.keys || []);
@@ -90,7 +91,7 @@ export default function CLIToolsPageClient({ machineId }) {
 
   const fetchConnections = async () => {
     try {
-      const res = await fetch("/api/providers");
+      const res = await fetch(apiPath("/api/providers"));
       const data = await res.json();
       if (res.ok) {
         setConnections(data.connections || []);

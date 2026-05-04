@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
+import { apiPath } from "@/lib/basePath";
 import {
   ReactFlow,
   Handle,
@@ -16,7 +17,7 @@ function getProviderConfig(providerId) {
 
 // Use local provider images from /public/providers/
 function getProviderImageUrl(providerId) {
-  return `/providers/${providerId}.png`;
+  return apiPath(`/providers/${providerId}.png`);
 }
 
 // Custom provider node - rectangle with image + name
@@ -81,7 +82,7 @@ function RouterNode({ data }) {
       <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-0 !w-0 !h-0" />
       <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
 
-      <img src="/favicon.svg" alt="9Router" className="w-6 h-6 mr-2" />
+      <img src={apiPath("/favicon.svg")} alt="9Router" className="w-6 h-6 mr-2" />
       <span className="text-sm font-bold text-primary">9Router</span>
       {data.activeCount > 0 && (
         <span className="ml-2 px-1.5 py-0.5 rounded-full bg-primary text-white text-xs font-bold">

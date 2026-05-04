@@ -1,9 +1,10 @@
+import { apiPath } from "@/lib/basePath";
 // MITM Tools — IDE tools intercepted via MITM proxy
 export const MITM_TOOLS = {
   antigravity: {
     id: "antigravity",
     name: "Antigravity",
-    image: "/providers/antigravity.png",
+    image: apiPath("/providers/antigravity.png"),
     color: "#4285F4",
     description: "Google Antigravity IDE with MITM",
     configType: "mitm",
@@ -21,7 +22,7 @@ export const MITM_TOOLS = {
   copilot: {
     id: "copilot",
     name: "GitHub Copilot",
-    image: "/providers/copilot.png",
+    image: apiPath("/providers/copilot.png"),
     color: "#1F6FEB",
     description: "GitHub Copilot IDE with MITM",
     configType: "mitm",
@@ -36,7 +37,7 @@ export const MITM_TOOLS = {
   kiro: {
     id: "kiro",
     name: "Kiro",
-    image: "/providers/kiro.png",
+    image: apiPath("/providers/kiro.png"),
     color: "#FF6B00",
     description: "Kiro IDE with MITM",
     configType: "mitm",
@@ -53,7 +54,7 @@ export const MITM_TOOLS = {
   // cursor: {
   //   id: "cursor",
   //   name: "Cursor",
-  //   image: "/providers/cursor.png",
+  //   image: apiPath("/providers/cursor.png"),
   //   color: "#000000",
   //   description: "Cursor IDE with MITM",
   //   configType: "mitm",
@@ -93,7 +94,7 @@ export const CLI_TOOLS = {
   openclaw: {
     id: "openclaw",
     name: "Open Claw",
-    image: "/providers/openclaw.png",
+    image: apiPath("/providers/openclaw.png"),
     color: "#FF6B35",
     description: "Open Claw AI Assistant",
     configType: "custom",
@@ -101,7 +102,7 @@ export const CLI_TOOLS = {
   codex: {
     id: "codex",
     name: "OpenAI Codex CLI",
-    image: "/providers/codex.png",
+    image: apiPath("/providers/codex.png"),
     color: "#10A37F",
     description: "OpenAI Codex CLI",
     configType: "custom",
@@ -109,7 +110,7 @@ export const CLI_TOOLS = {
   opencode: {
     id: "opencode",
     name: "OpenCode",
-    image: "/providers/opencode.png",
+    image: apiPath("/providers/opencode.png"),
     color: "#E87040",
     description: "OpenCode AI Terminal Assistant",
     configType: "custom",
@@ -117,7 +118,7 @@ export const CLI_TOOLS = {
   droid: {
     id: "droid",
     name: "Factory Droid",
-    image: "/providers/droid.png",
+    image: apiPath("/providers/droid.png"),
     color: "#00D4FF",
     description: "Factory Droid AI Assistant",
     configType: "custom",
@@ -125,7 +126,7 @@ export const CLI_TOOLS = {
   cursor: {
     id: "cursor",
     name: "Cursor",
-    image: "/providers/cursor.png",
+    image: apiPath("/providers/cursor.png"),
     color: "#000000",
     description: "Cursor AI Code Editor",
     configType: "guide",
@@ -146,7 +147,7 @@ export const CLI_TOOLS = {
   cline: {
     id: "cline",
     name: "Cline",
-    image: "/providers/cline.png",
+    image: apiPath("/providers/cline.png"),
     color: "#00D1B2",
     description: "Cline AI Coding Assistant",
     configType: "guide",
@@ -161,7 +162,7 @@ export const CLI_TOOLS = {
   kilo: {
     id: "kilo",
     name: "Kilo Code",
-    image: "/providers/kilocode.png",
+    image: apiPath("/providers/kilocode.png"),
     color: "#FF6B6B",
     description: "Kilo Code AI Assistant",
     configType: "guide",
@@ -176,7 +177,7 @@ export const CLI_TOOLS = {
   roo: {
     id: "roo",
     name: "Roo",
-    image: "/providers/roo.png",
+    image: apiPath("/providers/roo.png"),
     color: "#FF6B6B",
     description: "Roo AI Assistant",
     configType: "guide",
@@ -191,7 +192,7 @@ export const CLI_TOOLS = {
   continue: {
     id: "continue",
     name: "Continue",
-    image: "/providers/continue.png",
+    image: apiPath("/providers/continue.png"),
     color: "#7C3AED",
     description: "Continue AI Assistant",
     configType: "guide",
@@ -215,7 +216,7 @@ export const CLI_TOOLS = {
   hermes: {
     id: "hermes",
     name: "Hermes Agent",
-    image: "/providers/hermes.png",
+    image: apiPath("/providers/hermes.png"),
     color: "#8B5CF6",
     description: "Nous Research self-improving AI agent",
     configType: "custom",

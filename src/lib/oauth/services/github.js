@@ -1,6 +1,7 @@
 import { OAuthService } from "./oauth.js";
 import { GITHUB_CONFIG } from "../constants/oauth.js";
 import { spinner as createSpinner } from "../utils/ui.js";
+import { absoluteApiUrl } from "../../basePath.js";
 
 /**
  * GitHub Copilot OAuth Service
@@ -194,7 +195,7 @@ export class GitHubService extends OAuthService {
       const { server, token, userId } = await import("../config/index.js").then(m => m.getServerCredentials());
       const spinner = (await import("../utils/ui.js")).spinner("Connecting to server...").start();
       
-      const response = await fetch(`${server}/api/cli/providers/github`, {
+      const response = await fetch(absoluteApiUrl(server, "/api/cli/providers/github"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

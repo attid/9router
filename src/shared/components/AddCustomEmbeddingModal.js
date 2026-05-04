@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Modal, Input, Button, Badge } from "@/shared/components";
+import { apiPath } from "@/lib/basePath";
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
@@ -69,7 +70,7 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
   const handleValidate = async () => {
     setValidating(true);
     try {
-      const res = await fetch("/api/provider-nodes/validate", {
+      const res = await fetch(apiPath("/api/provider-nodes/validate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
