@@ -650,12 +650,28 @@ export default function APIPageClient({ machineId }) {
       const data = await res.json();
 
       if (res.ok) {
+        const createdRecord = {
+          id: data.id,
+          name: data.name,
+          key: data.key,
+          machineId: data.machineId,
+          allowedModels: data.allowedModels || null,
+          isActive: true,
+          createdAt: new Date().toISOString(),
+        };
+
+        setKeys((prev) => {
+          if (prev.some((key) => key.id === createdRecord.id)) return prev;
+          return [...prev, createdRecord];
+        });
         setCreatedKey(data.key);
-        await fetchData();
         setNewKeyName("");
         setNewKeyLimits({ hourly: "", daily: "", weekly: "" });
         setNewKeyModels([]);
         setShowAddModal(false);
+        fetchData().catch((error) => {
+          console.log("Error refreshing keys:", error);
+        });
       }
     } catch (error) {
       console.log("Error creating key:", error);
