@@ -60,12 +60,15 @@ export function buildRequestDetail(base, overrides = {}) {
     provider: base.provider || "unknown",
     model: base.model || "unknown",
     connectionId: base.connectionId || undefined,
+    apiKeyId: base.apiKeyId || undefined,
     timestamp: new Date().toISOString(),
     latency: base.latency || { ttft: 0, total: 0 },
     tokens: base.tokens || { prompt_tokens: 0, completion_tokens: 0 },
     request: base.request,
     providerRequest: base.providerRequest || null,
     providerResponse: base.providerResponse || null,
+    clientEndpoint: base.clientEndpoint || null,
+    providerUrl: base.providerUrl || null,
     response: base.response || {},
     status: base.status || "success",
     ...overrides
@@ -97,6 +100,7 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     timestamp: new Date().toISOString(),
     connectionId: connectionId || undefined,
     apiKey: apiKey || undefined,
-    endpoint: endpoint || null
+    endpoint: endpoint || null,
+    unmetered: endpoint?.isFreeCombo || false
   }).catch(() => {});
 }
