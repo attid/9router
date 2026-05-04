@@ -3,7 +3,6 @@ import { JSONFile } from "lowdb/node";
 import { v4 as uuidv4 } from "uuid";
 import path from "node:path";
 import fs from "node:fs";
-import lockfile from "proper-lockfile";
 import { DATA_DIR } from "@/lib/dataDir.js";
 import { normalizeComboModels } from "./comboUtils.js";
 
@@ -114,61 +113,12 @@ function ensureDbShape(data) {
 
 let dbInstance = null;
 
-const LOCK_OPTIONS = {
-  retries: { retries: 15, minTimeout: 50, maxTimeout: 3000 },
-  stale: 10000,
-};
-
-class LocalMutex {
-  constructor() {
-    this._queue = [];
-    this._locked = false;
-  }
-
-  async acquire() {
-    if (!this._locked) {
-      this._locked = true;
-      return () => this._release();
-    }
-    return new Promise((resolve) => {
-      this._queue.push(() => resolve(() => this._release()));
-    });
-  }
-
-  _release() {
-    const next = this._queue.shift();
-    if (next) next();
-    else this._locked = false;
-  }
-}
-
-const localMutex = new LocalMutex();
-
-async function withFileLock(db, operation) {
-  const releaseLocal = await localMutex.acquire();
-  let release = null;
-  try {
-    release = await lockfile.lock(DB_FILE, LOCK_OPTIONS);
-    await operation();
-  } catch (error) {
-    if (error.code === "ELOCKED") {
-      console.warn(`[DB] File is locked, retrying...`);
-    }
-    throw error;
-  } finally {
-    if (release) {
-      try { await release(); } catch (_) { }
-    }
-    releaseLocal();
-  }
-}
-
 async function safeRead(db) {
-  await withFileLock(db, () => db.read());
+  await db.read();
 }
 
 async function safeWrite(db) {
-  await withFileLock(db, () => db.write());
+  await db.write();
 }
 
 export async function getDb() {
