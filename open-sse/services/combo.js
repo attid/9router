@@ -1,5 +1,5 @@
 /**
- * Shared combo (model combo) handling with fallback support
+ * Shared combo (model combo) handling with weighted round-robin + fallback
  */
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
@@ -74,30 +74,69 @@ export function resetComboRotation(comboName) {
 }
 
 /**
- * Get combo models from combos data
+ * Build weighted cycle array from models with weight > 0.
+ * E.g. [{model:"A", weight:2}, {model:"B", weight:1}] → ["A", "A", "B"]
+ */
+export function buildWeightedCycle(models) {
+  const cycle = [];
+  for (const m of models) {
+    for (let i = 0; i < (m.weight || 0); i++) {
+      cycle.push(m.model);
+    }
+  }
+  return cycle;
+}
+
+/**
+ * Pick next model from weighted cycle using the existing combo rotation state.
+ */
+export function pickNextModel(comboName, cycle, stickyLimit = 1) {
+  const rotationKey = comboName || "__default__";
+  const normalizedStickyLimit = normalizeStickyLimit(stickyLimit);
+  const state = comboRotationState.get(rotationKey) || { index: 0, consecutiveUseCount: 0 };
+  const currentIndex = state.index % cycle.length;
+  const model = cycle[currentIndex];
+  const nextUseCount = state.consecutiveUseCount + 1;
+
+  if (nextUseCount >= normalizedStickyLimit) {
+    comboRotationState.set(rotationKey, {
+      index: (currentIndex + 1) % cycle.length,
+      consecutiveUseCount: 0,
+    });
+  } else {
+    comboRotationState.set(rotationKey, {
+      index: currentIndex,
+      consecutiveUseCount: nextUseCount,
+    });
+  }
+
+  return model;
+}
+
+/**
+ * Get combo models from combos data (backward compatible).
  * @param {string} modelStr - Model string to check
  * @param {Array|Object} combosData - Array of combos or object with combos
- * @returns {string[]|null} Array of models or null if not a combo
+ * @returns {{model: string, weight: number}[]|null} Array of model objects or null
  */
 export function getComboModelsFromData(modelStr, combosData) {
-  // Don't check if it's in provider/model format
   if (modelStr.includes("/")) return null;
-  
-  // Handle both array and object formats
+
   const combos = Array.isArray(combosData) ? combosData : (combosData?.combos || []);
-  
   const combo = combos.find(c => c.name === modelStr);
   if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
+    return combo.models.map(m =>
+      typeof m === "string" ? { model: m, weight: 1 } : { model: m.model, weight: m.weight ?? 1 }
+    );
   }
   return null;
 }
 
 /**
- * Handle combo chat with fallback
+ * Handle combo chat with weighted round-robin + fallback.
  * @param {Object} options
  * @param {Object} options.body - Request body
- * @param {string[]} options.models - Array of model strings to try
+ * @param {(string|{model: string, weight?: number})[]} options.models - Array of model definitions
  * @param {Function} options.handleSingleModel - Function to handle single model: (body, modelStr) => Promise<Response>
  * @param {Object} options.log - Logger object
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
@@ -106,27 +145,61 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @returns {Promise<Response>}
  */
 export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1 }) {
-  // Apply rotation strategy if enabled
-  const rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
-  
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
 
-  for (let i = 0; i < rotatedModels.length; i++) {
-    const modelStr = rotatedModels[i];
-    log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
+  const normalizedModels = (models || []).map((entry) =>
+    typeof entry === "string"
+      ? { model: entry, weight: 1 }
+      : { model: entry.model, weight: entry.weight ?? 1 }
+  );
+
+  // Split into balanced pool and fallback list
+  const balancePool = normalizedModels.filter((m) => m.weight > 0);
+  const fallbackList = normalizedModels.filter((m) => m.weight === 0);
+
+  // Build ordered try-list
+  const tryList = [];
+
+  if (comboStrategy === "round-robin" && balancePool.length > 0) {
+    const cycle = buildWeightedCycle(balancePool);
+    if (cycle.length > 0) {
+      const picked = pickNextModel(comboName, cycle, comboStickyLimit);
+      // Start with picked, then other pool models, then fallback
+      tryList.push(picked);
+      for (const m of balancePool) {
+        if (m.model !== picked && !tryList.includes(m.model)) {
+          tryList.push(m.model);
+        }
+      }
+    }
+  }
+
+  // If no weighted round-robin selection applied, use the models in declared order.
+  if (tryList.length === 0) {
+    for (const m of normalizedModels) {
+      tryList.push(m.model);
+    }
+  } else {
+    // Add fallback models at the end
+    for (const m of fallbackList) {
+      tryList.push(m.model);
+    }
+  }
+
+  for (let i = 0; i < tryList.length; i++) {
+    const modelStr = tryList[i];
+    log.info("COMBO", `Trying model ${i + 1}/${tryList.length}: ${modelStr}`);
 
     try {
       const result = await handleSingleModel(body, modelStr);
-      
-      // Success (2xx) - return response
+
       if (result.ok) {
         log.info("COMBO", `Model ${modelStr} succeeded`);
         return result;
       }
 
-      // Extract error info from response
       let errorText = result.statusText || "";
       let retryAfter = null;
       try {
@@ -137,17 +210,14 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         // Ignore JSON parse errors
       }
 
-      // Track earliest retryAfter across all combo models
       if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
         earliestRetryAfter = retryAfter;
       }
 
-      // Normalize error text to string (Worker-safe)
       if (typeof errorText !== "string") {
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
       }
 
-      // Check if should fallback to next model
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
 
       if (!shouldFallback) {
@@ -163,13 +233,10 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
         await new Promise(r => setTimeout(r, cooldownMs));
       }
-
-      // Fallback to next model
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
-      // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
