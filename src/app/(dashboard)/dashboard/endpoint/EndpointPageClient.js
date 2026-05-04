@@ -26,6 +26,7 @@ export default function APIPageClient({ machineId }) {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyLimits, setNewKeyLimits] = useState({ hourly: "", daily: "", weekly: "" });
   const [createdKey, setCreatedKey] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
@@ -64,6 +65,10 @@ export default function APIPageClient({ machineId }) {
 
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
+  // Token usage & limit editing state
+  const [keyUsage, setKeyUsage] = useState({});
+  const [editingLimits, setEditingLimits] = useState(null);
+  const [editLimitsValues, setEditLimitsValues] = useState({ hourly: "", daily: "", weekly: "" });
 
   const { copied, copy } = useCopyToClipboard();
 
@@ -84,6 +89,27 @@ export default function APIPageClient({ machineId }) {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
+
+  const fetchKeyUsage = async () => {
+    const usage = {};
+    for (const key of keys) {
+      try {
+        const res = await fetch(`/api/keys/${key.id}/usage`);
+        if (res.ok) {
+          usage[key.id] = await res.json();
+        }
+      } catch {}
+    }
+    setKeyUsage(usage);
+  };
+
+  useEffect(() => {
+    if (keys.length > 0) {
+      fetchKeyUsage();
+      const interval = setInterval(fetchKeyUsage, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [keys]);
 
   // Trust user intent (settingsEnabled): UI stays "enabled" while watchdog restarts process
   const syncTunnelStatus = async () => {
@@ -574,11 +600,19 @@ export default function APIPageClient({ machineId }) {
   const handleCreateKey = async () => {
     if (!newKeyName.trim()) return;
 
+    const limits = {};
+    if (newKeyLimits.hourly) limits.hourly = parseInt(newKeyLimits.hourly, 10);
+    if (newKeyLimits.daily) limits.daily = parseInt(newKeyLimits.daily, 10);
+    if (newKeyLimits.weekly) limits.weekly = parseInt(newKeyLimits.weekly, 10);
+
     try {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({
+          name: newKeyName,
+          ...(Object.keys(limits).length > 0 ? { limits } : {}),
+        }),
       });
       const data = await res.json();
 
@@ -586,6 +620,7 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewKeyLimits({ hourly: "", daily: "", weekly: "" });
         setShowAddModal(false);
       }
     } catch (error) {
@@ -627,6 +662,27 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const handleSaveLimits = async (keyId) => {
+    const limits = {
+      hourly: editLimitsValues.hourly ? parseInt(editLimitsValues.hourly, 10) : null,
+      daily: editLimitsValues.daily ? parseInt(editLimitsValues.daily, 10) : null,
+      weekly: editLimitsValues.weekly ? parseInt(editLimitsValues.weekly, 10) : null,
+    };
+    try {
+      const res = await fetch(`/api/keys/${keyId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limits }),
+      });
+      if (res.ok) {
+        await fetchData();
+        setEditingLimits(null);
+      }
+    } catch (error) {
+      console.log("Error saving limits:", error);
+    }
+  };
+
   const maskKey = (fullKey) => {
     if (!fullKey) return "";
     return fullKey.length > 8 ? fullKey.slice(0, 8) + "..." : fullKey;
@@ -649,6 +705,25 @@ export default function APIPageClient({ machineId }) {
       setBaseUrl(`${window.location.origin}/v1`);
     }
   }, []);
+
+  const formatTokens = (n) => n?.toLocaleString() ?? "0";
+
+  const LimitProgressBar = ({ used, limit, label }) => {
+    if (!limit) return null;
+    const pct = Math.min((used / limit) * 100, 100);
+    const color = pct > 90 ? "bg-red-500" : pct > 75 ? "bg-yellow-500" : "bg-emerald-500";
+    return (
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center justify-between text-xs text-text-muted">
+          <span>{label}</span>
+          <span>{formatTokens(used)} / {formatTokens(limit)}</span>
+        </div>
+        <div className="h-1.5 bg-black/5 dark:bg-white/5 rounded-full overflow-hidden">
+          <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -989,8 +1064,49 @@ export default function APIPageClient({ machineId }) {
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
+                  {/* Token limits */}
+                  {(key.limits?.hourly || key.limits?.daily || key.limits?.weekly) && editingLimits !== key.id && (
+                    <div className="mt-2 flex flex-col gap-1">
+                      <LimitProgressBar used={keyUsage[key.id]?.hourly?.used} limit={key.limits?.hourly} label="Hourly" />
+                      <LimitProgressBar used={keyUsage[key.id]?.daily?.used} limit={key.limits?.daily} label="Daily" />
+                      <LimitProgressBar used={keyUsage[key.id]?.weekly?.used} limit={key.limits?.weekly} label="Weekly" />
+                    </div>
+                  )}
+                  {/* Edit limits inline */}
+                  {editingLimits === key.id && (
+                    <div className="mt-2 flex flex-col gap-2 p-2 rounded bg-black/[0.02] dark:bg-white/[0.02]">
+                      <p className="text-xs font-medium">Token Limits</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        <Input size="sm" label="Hourly" type="number" min="0" value={editLimitsValues.hourly} onChange={(e) => setEditLimitsValues(p => ({ ...p, hourly: e.target.value }))} placeholder="&#8734;" />
+                        <Input size="sm" label="Daily" type="number" min="0" value={editLimitsValues.daily} onChange={(e) => setEditLimitsValues(p => ({ ...p, daily: e.target.value }))} placeholder="&#8734;" />
+                        <Input size="sm" label="Weekly" type="number" min="0" value={editLimitsValues.weekly} onChange={(e) => setEditLimitsValues(p => ({ ...p, weekly: e.target.value }))} placeholder="&#8734;" />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={() => handleSaveLimits(key.id)}>Save</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingLimits(null)}>Cancel</Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      if (editingLimits === key.id) {
+                        setEditingLimits(null);
+                      } else {
+                        setEditLimitsValues({
+                          hourly: key.limits?.hourly || "",
+                          daily: key.limits?.daily || "",
+                          weekly: key.limits?.weekly || "",
+                        });
+                        setEditingLimits(key.id);
+                      }
+                    }}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-0 group-hover:opacity-100 transition-all"
+                    title="Edit token limits"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">tune</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1025,6 +1141,7 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewKeyLimits({ hourly: "", daily: "", weekly: "" });
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1034,6 +1151,35 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+          <div className="border-t border-border pt-3">
+            <p className="text-sm font-medium mb-2">Token Limits <span className="text-text-muted font-normal">(optional)</span></p>
+            <div className="flex flex-col gap-2">
+              <Input
+                label="Hourly limit"
+                type="number"
+                min="0"
+                value={newKeyLimits.hourly}
+                onChange={(e) => setNewKeyLimits(prev => ({ ...prev, hourly: e.target.value }))}
+                placeholder="Unlimited"
+              />
+              <Input
+                label="Daily limit"
+                type="number"
+                min="0"
+                value={newKeyLimits.daily}
+                onChange={(e) => setNewKeyLimits(prev => ({ ...prev, daily: e.target.value }))}
+                placeholder="Unlimited"
+              />
+              <Input
+                label="Weekly limit"
+                type="number"
+                min="0"
+                value={newKeyLimits.weekly}
+                onChange={(e) => setNewKeyLimits(prev => ({ ...prev, weekly: e.target.value }))}
+                placeholder="Unlimited"
+              />
+            </div>
+          </div>
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
@@ -1042,6 +1188,7 @@ export default function APIPageClient({ machineId }) {
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+                setNewKeyLimits({ hourly: "", daily: "", weekly: "" });
               }}
               variant="ghost"
               fullWidth

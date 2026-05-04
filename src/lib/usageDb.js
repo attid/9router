@@ -299,7 +299,7 @@ export async function saveRequestUsage(entry) {
     }
 
     await db.write();
-    statsEmitter.emit("update");
+    statsEmitter.emit("update", entry);
   } catch (error) {
     console.error("Failed to save usage stats:", error);
   }
@@ -333,6 +333,26 @@ export async function getUsageHistory(filter = {}) {
   }
 
   return history;
+}
+
+/**
+ * Get total token usage for a specific API key since a given time
+ * @param {string} apiKey - The API key value
+ * @param {Date} since - Start of time window
+ * @returns {Promise<number>} Total tokens (prompt + completion)
+ */
+export async function getUsageByApiKey(apiKey, since) {
+  const db = await getUsageDb();
+  const history = db.data.history || [];
+  const sinceMs = since.getTime();
+
+  let total = 0;
+  for (const entry of history) {
+    if (entry.apiKey !== apiKey) continue;
+    if (new Date(entry.timestamp).getTime() < sinceMs) continue;
+    total += (entry.tokens?.prompt_tokens || entry.tokens?.input_tokens || 0) + (entry.tokens?.completion_tokens || entry.tokens?.output_tokens || 0);
+  }
+  return total;
 }
 
 /**
