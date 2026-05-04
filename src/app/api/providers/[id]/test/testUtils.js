@@ -14,7 +14,9 @@ import {
   CLAUDE_CONFIG,
   CLINE_CONFIG,
   KILOCODE_CONFIG,
+  KIMI_CODING_CONFIG,
 } from "@/lib/oauth/constants/oauth";
+import { buildKimiHeaders } from "@/lib/kimi/headers.js";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 
 // OAuth provider test endpoints
@@ -61,7 +63,7 @@ const OAUTH_TEST_CONFIG = {
   },
   qwen: { checkExpiry: true, refreshable: true },
   kiro: { checkExpiry: true, refreshable: true },
-  "kimi-coding": { checkExpiry: true, refreshable: false },
+  "kimi-coding": { checkExpiry: true, refreshable: true },
   cursor: { tokenExists: true },
   kilocode: {
     url: `${KILOCODE_CONFIG.apiBaseUrl}/api/profile`,
@@ -178,6 +180,25 @@ async function refreshOAuthToken(connection) {
           grant_type: "refresh_token",
           refresh_token: refreshToken,
           client_id: QWEN_CONFIG.clientId,
+        }),
+      });
+      if (!response.ok) return null;
+      const data = await response.json();
+      return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
+    }
+
+    if (provider === "kimi-coding") {
+      const response = await fetch(KIMI_CODING_CONFIG.tokenUrl, {
+        method: "POST",
+        headers: {
+          ...buildKimiHeaders(),
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+          client_id: KIMI_CODING_CONFIG.clientId,
         }),
       });
       if (!response.ok) return null;

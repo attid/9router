@@ -24,6 +24,7 @@ import {
   GITLAB_CONFIG,
   CODEBUDDY_CONFIG,
 } from "./constants/oauth";
+import { buildKimiHeaders } from "../kimi/headers.js";
 
 const BASE64_BLOCK_SIZE = 4;
 
@@ -864,8 +865,15 @@ const PROVIDERS = {
     requestDeviceCode: async (config) => {
       const response = await fetch(config.deviceCodeUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-        body: new URLSearchParams({ client_id: config.clientId }),
+        headers: {
+          ...buildKimiHeaders(),
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({
+          client_id: config.clientId,
+          scope: config.scope,
+        }),
       });
       if (!response.ok) {
         const error = await response.text();
@@ -886,7 +894,11 @@ const PROVIDERS = {
     pollToken: async (config, deviceCode) => {
       const response = await fetch(config.tokenUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+        headers: {
+          ...buildKimiHeaders(),
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
         body: new URLSearchParams({
           grant_type: "urn:ietf:params:oauth:grant-type:device_code",
           client_id: config.clientId,

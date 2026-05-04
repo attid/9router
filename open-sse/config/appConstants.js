@@ -1,4 +1,5 @@
 import { platform, arch } from "os";
+import { buildKimiHeaders as buildSharedKimiHeaders } from "../../src/lib/kimi/headers.js";
 
 // === Gemini CLI ===
 export const GEMINI_CLI_VERSION = "0.31.0";
@@ -187,10 +188,5 @@ export const OAUTH_ENDPOINTS = {
 
 // Generate Kimi OAuth custom headers
 export function buildKimiHeaders() {
-  return {
-    "X-Msh-Platform": "9router",
-    "X-Msh-Version": "2.1.2",
-    "X-Msh-Device-Model": typeof process !== "undefined" ? `${process.platform} ${process.arch}` : "unknown",
-    "X-Msh-Device-Id": `kimi-${Date.now()}`
-  };
+  return buildSharedKimiHeaders();
 }
