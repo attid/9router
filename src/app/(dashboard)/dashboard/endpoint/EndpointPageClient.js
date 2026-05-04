@@ -91,8 +91,8 @@ export default function APIPageClient({ machineId }) {
   const loadModelSelectData = async () => {
     try {
       const [providersRes, aliasesRes] = await Promise.all([
-        fetch("/api/providers"),
-        fetch("/api/models/alias"),
+        fetch(apiPath("/api/providers")),
+        fetch(apiPath("/api/models/alias")),
       ]);
       if (providersRes.ok) {
         const data = await providersRes.json();
