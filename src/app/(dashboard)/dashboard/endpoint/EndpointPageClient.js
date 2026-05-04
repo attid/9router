@@ -720,7 +720,7 @@ export default function APIPageClient({ machineId }) {
   const handleSaveModels = async (keyId) => {
     const allowedModels = editModelsValue.length > 0 ? editModelsValue : null;
     try {
-      const res = await fetch(`/api/keys/${keyId}`, {
+      const res = await fetch(apiPath(`/api/keys/${keyId}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ allowedModels }),
