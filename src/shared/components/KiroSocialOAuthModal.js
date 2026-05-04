@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { apiPath } from "@/lib/basePath";
 
 /**
  * Kiro Social OAuth Modal (Google/GitHub)
@@ -26,7 +27,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
         setError(null);
         setStep("loading");
 
-        const res = await fetch(`/api/oauth/kiro/social-authorize?provider=${provider}`);
+        const res = await fetch(apiPath(`/api/oauth/kiro/social-authorize?provider=${provider}`));
         const data = await res.json();
 
         if (!res.ok) {
@@ -74,7 +75,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
       }
 
       // Exchange code for tokens
-      const res = await fetch("/api/oauth/kiro/social-exchange", {
+      const res = await fetch(apiPath("/api/oauth/kiro/social-exchange"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

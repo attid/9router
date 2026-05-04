@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CardSkeleton, Input, Modal, Toggle } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
+import { apiPath } from "@/lib/basePath";
 
 function getStatusVariant(status) {
   if (status === "active") return "success";
@@ -45,7 +46,7 @@ export default function ProxyPoolsPage() {
 
   const fetchProxyPools = useCallback(async () => {
     try {
-      const res = await fetch("/api/proxy-pools?includeUsage=true", { cache: "no-store" });
+      const res = await fetch(apiPath("/api/proxy-pools?includeUsage=true"), { cache: "no-store" });
       const data = await res.json();
       if (res.ok) {
         setProxyPools(data.proxyPools || []);
@@ -122,7 +123,7 @@ export default function ProxyPoolsPage() {
     if (!deleting) return;
 
     try {
-      const res = await fetch(`/api/proxy-pools/${proxyPool.id}`, { method: "DELETE" });
+      const res = await fetch(apiPath(`/api/proxy-pools/${proxyPool.id}`), { method: "DELETE" });
       if (res.ok) {
         setProxyPools((prev) => prev.filter((item) => item.id !== proxyPool.id));
         notify.success("Proxy pool deleted");
@@ -144,7 +145,7 @@ export default function ProxyPoolsPage() {
   const handleTest = async (proxyPoolId) => {
     setTestingId(proxyPoolId);
     try {
-      const res = await fetch(`/api/proxy-pools/${proxyPoolId}/test`, { method: "POST" });
+      const res = await fetch(apiPath(`/api/proxy-pools/${proxyPoolId}/test`), { method: "POST" });
       const data = await res.json();
 
       if (!res.ok) {
@@ -186,7 +187,7 @@ export default function ProxyPoolsPage() {
     if (!vercelForm.vercelToken.trim()) return;
     setDeploying(true);
     try {
-      const res = await fetch("/api/proxy-pools/vercel-deploy", {
+      const res = await fetch(apiPath("/api/proxy-pools/vercel-deploy"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(vercelForm),
@@ -288,7 +289,7 @@ export default function ProxyPoolsPage() {
           continue;
         }
 
-        const res = await fetch("/api/proxy-pools", {
+        const res = await fetch(apiPath("/api/proxy-pools"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

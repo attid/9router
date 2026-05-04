@@ -4,6 +4,7 @@ import { IFLOW_CONFIG } from "../constants/oauth.js";
 import { getServerCredentials } from "../config/index.js";
 import { startLocalServer } from "../utils/server.js";
 import { spinner as createSpinner } from "../utils/ui.js";
+import { absoluteApiUrl } from "../../basePath.js";
 
 /**
  * iFlow OAuth Service
@@ -95,7 +96,7 @@ export class IFlowService {
   async saveTokens(tokens, userInfo) {
     const { server, token, userId } = getServerCredentials();
 
-    const response = await fetch(`${server}/api/cli/providers/iflow`, {
+    const response = await fetch(absoluteApiUrl(server, "/api/cli/providers/iflow"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -199,4 +200,3 @@ export class IFlowService {
     }
   }
 }
-

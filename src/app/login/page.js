@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card, Button, Input } from "@/shared/components";
 import { useRouter } from "next/navigation";
+import { apiPath, dashboardPath } from "@/lib/basePath";
 
 export default function LoginPage() {
   const [password, setPassword] = useState("");
@@ -18,7 +19,7 @@ export default function LoginPage() {
       const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
 
       try {
-        const res = await fetch(`${baseUrl}/api/settings`, {
+        const res = await fetch(`${baseUrl}${apiPath("/api/settings")}`, {
           signal: controller.signal,
         });
         clearTimeout(timeoutId);
@@ -26,7 +27,7 @@ export default function LoginPage() {
         if (res.ok) {
           const data = await res.json();
           if (data.requireLogin === false) {
-            router.push("/dashboard");
+            router.push(dashboardPath("/dashboard"));
             router.refresh();
             return;
           }
@@ -49,14 +50,14 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch(apiPath("/api/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
       });
 
       if (res.ok) {
-        router.push("/dashboard");
+        router.push(dashboardPath("/dashboard"));
         router.refresh();
       } else {
         const data = await res.json();

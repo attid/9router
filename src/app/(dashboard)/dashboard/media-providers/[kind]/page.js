@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Card, Badge, Button, AddCustomEmbeddingModal } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS, getProvidersByKind } from "@/shared/constants/providers";
+import { apiPath } from "@/lib/basePath";
 
 // Kinds that support combos (currently disabled for image/tts — temporarily hidden).
 // webSearch/webFetch handled by /web page.
@@ -54,7 +55,7 @@ function MediaProviderCard({ provider, kind, connections, isCustom }) {
             style={{ backgroundColor: `${provider.color?.length > 7 ? provider.color : (provider.color ?? "#888") + "15"}` }}
           >
             <ProviderIcon
-              src={`/providers/${provider.id}.png`}
+              src={apiPath(`/providers/${provider.id}.png`)}
               alt={provider.name}
               size={30}
               className="object-contain rounded-lg max-w-[30px] max-h-[30px]"
@@ -92,7 +93,7 @@ function ComboList({ combos }) {
                   return (
                     <div key={`${entry}-${i}`} title={p?.name || entry} className="size-5 rounded flex items-center justify-center" style={{ backgroundColor: `${(p?.color ?? "#888")}15` }}>
                       <ProviderIcon
-                        src={`/providers/${pid}.png`}
+                        src={apiPath(`/providers/${pid}.png`)}
                         alt={p?.name || pid}
                         size={18}
                         className="object-contain rounded max-w-[18px] max-h-[18px]"
@@ -137,18 +138,18 @@ export default function MediaProviderKindPage() {
 
   useEffect(() => {
     if (!kindConfig) return;
-    fetch("/api/providers", { cache: "no-store" })
+    fetch(apiPath("/api/providers"), { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => setConnections(d.connections || []))
       .catch(() => {});
     if (isEmbedding) {
-      fetch("/api/provider-nodes", { cache: "no-store" })
+      fetch(apiPath("/api/provider-nodes"), { cache: "no-store" })
         .then((r) => r.json())
         .then((d) => setCustomNodes((d.nodes || []).filter((n) => n.type === "custom-embedding")))
         .catch(() => {});
     }
     if (supportsCombo) {
-      fetch("/api/combos", { cache: "no-store" })
+      fetch(apiPath("/api/combos"), { cache: "no-store" })
         .then((r) => r.json())
         .then((d) => setCombos(d.combos || []))
         .catch(() => {});
@@ -176,7 +177,7 @@ export default function MediaProviderKindPage() {
     let i = 1;
     const existing = new Set(combos.map((c) => c.name));
     while (existing.has(name)) { name = `${base}-${i++}`; }
-    const res = await fetch("/api/combos", {
+    const res = await fetch(apiPath("/api/combos"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, models: [], kind }),

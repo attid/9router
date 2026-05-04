@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { apiPath } from "@/lib/basePath";
 
 const useProviderStore = create((set, get) => ({
   providers: [],
@@ -31,7 +32,7 @@ const useProviderStore = create((set, get) => ({
   fetchProviders: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await fetch("/api/providers");
+      const response = await fetch(apiPath("/api/providers"));
       const data = await response.json();
       if (response.ok) {
         set({ providers: data.providers, loading: false });

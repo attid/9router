@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getProviderConnectionById, getApiKeys } from "@/lib/localDb";
 import { getProviderModels, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { apiPath } from "@/lib/basePath";
 
 /**
  * Get an active API key to pass through auth when requireApiKey is enabled.
@@ -20,7 +21,7 @@ async function pingModel(modelId, baseUrl, apiKey) {
   try {
     const headers = { "Content-Type": "application/json" };
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-    const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
+    const res = await fetch(`${baseUrl}${apiPath("/api/v1/chat/completions")}`, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -67,7 +68,7 @@ export async function POST(request, { params }) {
     // Compatible providers: fetch live model list
     if (isCompatible && models.length === 0) {
       try {
-        const modelsRes = await fetch(`${getBaseUrl(request)}/api/providers/${id}/models`);
+        const modelsRes = await fetch(`${getBaseUrl(request)}${apiPath(`/api/providers/${id}/models`)}`);
         if (modelsRes.ok) {
           const data = await modelsRes.json();
           models = (data.models || []).map((m) => ({ id: m.id || m.name, name: m.name || m.id }));

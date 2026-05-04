@@ -3,6 +3,7 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input, OAuthModal } from "@/shared/components";
+import { apiPath } from "@/lib/basePath";
 
 const GITLAB_COM = "https://gitlab.com";
 
@@ -64,7 +65,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/oauth/gitlab/pat", {
+      const res = await fetch(apiPath("/api/oauth/gitlab/pat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: pat.trim(), baseUrl: baseUrl.trim() || GITLAB_COM }),

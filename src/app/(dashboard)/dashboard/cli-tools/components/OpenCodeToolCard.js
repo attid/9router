@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import EndpointPresetControl from "./EndpointPresetControl";
+import { apiPath } from "@/lib/basePath";
 
 export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus }) {
   const [status, setStatus] = useState(initialStatus || null);
@@ -58,7 +59,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
 
   const fetchModelAliases = async () => {
     try {
-      const res = await fetch("/api/models/alias");
+      const res = await fetch(apiPath("/api/models/alias"));
       const data = await res.json();
       if (res.ok) setModelAliases(data.aliases || {});
     } catch (error) {
@@ -87,7 +88,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
   const checkStatus = async () => {
     setChecking(true);
     try {
-      const res = await fetch("/api/cli-tools/opencode-settings");
+      const res = await fetch(apiPath("/api/cli-tools/opencode-settings"));
       const data = await res.json();
       setStatus(data);
     } catch (error) {
@@ -105,7 +106,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
         ? selectedApiKey
         : (!cloudEnabled ? "sk_9router" : selectedApiKey);
 
-      const res = await fetch("/api/cli-tools/opencode-settings", {
+      const res = await fetch(apiPath("/api/cli-tools/opencode-settings"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -134,7 +135,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
     setRestoring(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/cli-tools/opencode-settings", { method: "DELETE" });
+      const res = await fetch(apiPath("/api/cli-tools/opencode-settings"), { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
@@ -194,7 +195,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
       <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
-            <Image src="/providers/opencode.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
+            <Image src={apiPath("/providers/opencode.png")} alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
           </div>
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -324,7 +325,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                             onClick={async () => {
                               if (model === activeModel) {
                                 try {
-                                  const res = await fetch("/api/cli-tools/opencode-settings", {
+                                  const res = await fetch(apiPath("/api/cli-tools/opencode-settings"), {
                                     method: "PATCH",
                                     headers: { "Content-Type": "application/json" },
                                     body: JSON.stringify({ clearActiveModel: true }),
@@ -353,7 +354,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 try {
-                                  const res = await fetch(`/api/cli-tools/opencode-settings?model=${encodeURIComponent(model)}`, { method: "DELETE" });
+                                  const res = await fetch(apiPath(`/api/cli-tools/opencode-settings?model=${encodeURIComponent(model)}`), { method: "DELETE" });
                                   if (res.ok) {
                                     const newModels = selectedModels.filter((m) => m !== model);
                                     setSelectedModels(newModels);

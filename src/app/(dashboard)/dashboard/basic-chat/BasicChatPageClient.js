@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button } from "@/shared/components";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { isAnthropicCompatibleProvider, isOpenAICompatibleProvider } from "@/shared/constants/providers";
+import { apiPath } from "@/lib/basePath";
 
 const STORAGE_KEYS = {
   sessions: "basic-chat.sessions",
@@ -213,7 +214,7 @@ export default function BasicChatPageClient() {
       setLoadError("");
 
       try {
-        const providersRes = await fetch("/api/providers", { cache: "no-store" });
+        const providersRes = await fetch(apiPath("/api/providers"), { cache: "no-store" });
         const providersData = await providersRes.json().catch(() => ({}));
         const connections = Array.isArray(providersData.connections)
           ? providersData.connections.filter((connection) => connection?.isActive !== false)
@@ -262,7 +263,7 @@ export default function BasicChatPageClient() {
         const liveResults = await Promise.all(
           connections.map(async (connection) => {
             try {
-              const response = await fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" });
+              const response = await fetch(apiPath(`/api/providers/${connection.id}/models`), { cache: "no-store" });
               const data = await response.json().catch(() => ({}));
               if (!response.ok) return { connection, models: [] };
               const models = parseProviderModelsPayload(data)
@@ -631,7 +632,7 @@ export default function BasicChatPageClient() {
       }));
 
     try {
-      const response = await fetch("/api/dashboard/chat/completions", {
+      const response = await fetch(apiPath("/api/dashboard/chat/completions"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

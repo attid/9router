@@ -5,6 +5,7 @@ import { MITM_TOOLS } from "@/shared/constants/cliTools";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { MitmServerCard, MitmToolCard } from "@/app/(dashboard)/dashboard/cli-tools/components";
+import { apiPath } from "@/lib/basePath";
 
 export default function MitmPageClient() {
   const [connections, setConnections] = useState([]);
@@ -23,7 +24,7 @@ export default function MitmPageClient() {
 
   const fetchConnections = async () => {
     try {
-      const res = await fetch("/api/providers");
+      const res = await fetch(apiPath("/api/providers"));
       if (res.ok) {
         const data = await res.json();
         setConnections(data.connections || []);
@@ -33,7 +34,7 @@ export default function MitmPageClient() {
 
   const fetchApiKeys = async () => {
     try {
-      const res = await fetch("/api/keys");
+      const res = await fetch(apiPath("/api/keys"));
       if (res.ok) {
         const data = await res.json();
         setApiKeys(data.keys || []);
@@ -43,7 +44,7 @@ export default function MitmPageClient() {
 
   const fetchAliases = async () => {
     try {
-      const res = await fetch("/api/models/alias");
+      const res = await fetch(apiPath("/api/models/alias"));
       if (res.ok) {
         const data = await res.json();
         setModelAliases(data.aliases || {});
@@ -53,7 +54,7 @@ export default function MitmPageClient() {
 
   const fetchCloudSettings = async () => {
     try {
-      const res = await fetch("/api/settings");
+      const res = await fetch(apiPath("/api/settings"));
       if (res.ok) {
         const data = await res.json();
         setCloudEnabled(data.cloudEnabled || false);

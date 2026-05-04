@@ -10,6 +10,7 @@ import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
+import { apiPath } from "@/lib/basePath";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
 const VISIBLE_MEDIA_KINDS = ["embedding", "image", "tts"];
@@ -53,7 +54,7 @@ export default function Sidebar({ onClose }) {
   const STATUS_URL = `http://localhost:${UPDATER_CONFIG.statusPort}/update/status`;
 
   useEffect(() => {
-    fetch("/api/settings")
+    fetch(apiPath("/api/settings"))
       .then(res => res.json())
       .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
       .catch(() => {});
@@ -61,7 +62,7 @@ export default function Sidebar({ onClose }) {
 
   // Lazy check for new npm version on mount
   useEffect(() => {
-    fetch("/api/version")
+    fetch(apiPath("/api/version"))
       .then(res => res.json())
       .then(data => { if (data.hasUpdate) setUpdateInfo(data); })
       .catch(() => {});
@@ -78,7 +79,7 @@ export default function Sidebar({ onClose }) {
     setIsUpdating(true);
     setShowUpdateModal(false);
     try {
-      const res = await fetch("/api/version/update", { method: "POST" });
+      const res = await fetch(apiPath("/api/version/update"), { method: "POST" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         alert(data.message || "Update failed. Please run the install command manually.");
@@ -112,7 +113,7 @@ export default function Sidebar({ onClose }) {
   const handleShutdown = async () => {
     setIsShuttingDown(true);
     try {
-      await fetch("/api/shutdown", { method: "POST" });
+      await fetch(apiPath("/api/shutdown"), { method: "POST" });
     } catch (e) {
       // Expected to fail as server shuts down; ignore error
     }

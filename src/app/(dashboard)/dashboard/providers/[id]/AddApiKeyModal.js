@@ -3,6 +3,7 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
+import { apiPath } from "@/lib/basePath";
 
 export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, authType, authHint, website, proxyPools, onSave, onClose }) {
   const NONE_PROXY_POOL_VALUE = "__none__";
@@ -55,7 +56,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const handleValidate = async () => {
     setValidating(true);
     try {
-      const res = await fetch("/api/providers/validate", {
+      const res = await fetch(apiPath("/api/providers/validate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData() }),
@@ -83,7 +84,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       try {
         setValidating(true);
         setValidationResult(null);
-        const res = await fetch("/api/providers/validate", {
+        const res = await fetch(apiPath("/api/providers/validate"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData() }),

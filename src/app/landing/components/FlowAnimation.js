@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
 import ProviderIcon from "@/shared/components/ProviderIcon";
+import { apiPath } from "@/lib/basePath";
 
 const CLI_TOOLS = [
-  { id: "claude", name: "Claude Code", image: "/providers/claude.png" },
-  { id: "codex", name: "OpenAI Codex", image: "/providers/codex.png" },
-  { id: "cline", name: "Cline", image: "/providers/cline.png" },
-  { id: "cursor", name: "Cursor", image: "/providers/cursor.png" },
+  { id: "claude", name: "Claude Code", image: apiPath("/providers/claude.png") },
+  { id: "codex", name: "OpenAI Codex", image: apiPath("/providers/codex.png") },
+  { id: "cline", name: "Cline", image: apiPath("/providers/cline.png") },
+  { id: "cursor", name: "Cursor", image: apiPath("/providers/cursor.png") },
 ];
 
 const PROVIDERS = [

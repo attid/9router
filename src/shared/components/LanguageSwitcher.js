@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { LOCALES, LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
 import { reloadTranslations } from "@/i18n/runtime";
+import { apiPath } from "@/lib/basePath";
 
 function getLocaleFromCookie() {
   if (typeof document === "undefined") return "en";
@@ -93,7 +94,7 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
     setIsPending(true);
     setIsOpen(false);
     try {
-      await fetch("/api/locale", {
+      await fetch(apiPath("/api/locale"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ locale: nextLocale }),

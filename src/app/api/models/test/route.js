@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getApiKeys } from "@/lib/localDb";
+import { apiPath } from "@/lib/basePath";
 
 // POST /api/models/test - Ping a single model via internal completions or embeddings
 export async function POST(request) {
@@ -24,7 +25,7 @@ export async function POST(request) {
 
     // Route to appropriate endpoint based on kind
     if (kind === "embedding") {
-      const res = await fetch(`${baseUrl}/api/v1/embeddings`, {
+      const res = await fetch(`${baseUrl}${apiPath("/api/v1/embeddings")}`, {
         method: "POST",
         headers,
         body: JSON.stringify({ model, input: "test" }),
@@ -47,7 +48,7 @@ export async function POST(request) {
     }
 
     // Default: chat completions
-    const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
+    const res = await fetch(`${baseUrl}${apiPath("/api/v1/chat/completions")}`, {
       method: "POST",
       headers,
       body: JSON.stringify({

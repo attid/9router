@@ -4,6 +4,7 @@ import { GEMINI_CONFIG, getOAuthClientMetadata } from "../constants/oauth.js";
 import { getServerCredentials } from "../config/index.js";
 import { startLocalServer } from "../utils/server.js";
 import { spinner as createSpinner } from "../utils/ui.js";
+import { absoluteApiUrl } from "../../basePath.js";
 
 /**
  * Gemini CLI (Google Cloud Code Assist) OAuth Service
@@ -127,7 +128,7 @@ export class GeminiCLIService {
   async saveTokens(tokens, userInfo, projectId) {
     const { server, token, userId } = getServerCredentials();
 
-    const response = await fetch(`${server}/api/cli/providers/gemini-cli`, {
+    const response = await fetch(absoluteApiUrl(server, "/api/cli/providers/gemini-cli"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -237,4 +238,3 @@ export class GeminiCLIService {
     }
   }
 }
-

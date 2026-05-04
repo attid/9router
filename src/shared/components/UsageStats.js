@@ -9,6 +9,7 @@ import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/Overview
 import UsageTable, { fmt, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
 import ProviderTopology from "@/app/(dashboard)/dashboard/usage/components/ProviderTopology";
 import UsageChart from "@/app/(dashboard)/dashboard/usage/components/UsageChart";
+import { apiPath } from "@/lib/basePath";
 
 function timeAgo(timestamp) {
   const diff = Math.floor((Date.now() - new Date(timestamp)) / 1000);
@@ -201,7 +202,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   // Fetch connected providers once, deduplicate by provider type
   // Always include noAuth free providers (e.g. opencode) regardless of connections
   useEffect(() => {
-    fetch("/api/providers")
+    fetch(apiPath("/api/providers"))
       .then((r) => r.ok ? r.json() : null)
       .then((d) => {
         const seen = new Set();
@@ -224,7 +225,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     if (!stats) setLoading(true);
     else setFetching(true);
 
-    fetch(`/api/usage/stats?period=${period}`)
+    fetch(apiPath(`/api/usage/stats?period=${period}`))
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data) setStats((prev) => ({ ...prev, ...data }));
@@ -238,7 +239,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
   // SSE connection - real-time updates for activeRequests + recentRequests only
   useEffect(() => {
-    const es = new EventSource("/api/usage/stream");
+    const es = new EventSource(apiPath("/api/usage/stream"));
 
     es.onmessage = (e) => {
       try {

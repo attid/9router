@@ -12,6 +12,7 @@ import ConnectionsCard from "@/app/(dashboard)/dashboard/providers/components/Co
 import ModelsCard from "@/app/(dashboard)/dashboard/providers/components/ModelsCard";
 import { TTS_PROVIDER_CONFIG } from "@/shared/constants/ttsProviders";
 import { getTtsVoicesForModel } from "open-sse/config/ttsModels.js";
+import { apiPath } from "@/lib/basePath";
 
 // Shared row layout — defined outside components to avoid re-mount on re-render
 function Row({ label, children }) {
@@ -136,11 +137,11 @@ function EmbeddingExampleCard({ providerId, customAlias }) {
 
   useEffect(() => {
     setLocalEndpoint(window.location.origin);
-    fetch("/api/keys")
+    fetch(apiPath("/api/keys"))
       .then((r) => r.json())
       .then((d) => { setApiKey((d.keys || []).find((k) => k.isActive !== false)?.key || ""); })
       .catch(() => {});
-    fetch("/api/tunnel/status")
+    fetch(apiPath("/api/tunnel/status"))
       .then((r) => r.json())
       .then((d) => { if (d.publicUrl) setTunnelEndpoint(d.publicUrl); })
       .catch(() => {});
@@ -171,7 +172,7 @@ function EmbeddingExampleCard({ providerId, customAlias }) {
     try {
       const headers = { "Content-Type": "application/json" };
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-      const res = await fetch("/api/v1/embeddings", {
+      const res = await fetch(apiPath("/api/v1/embeddings"), {
         method: "POST",
         headers,
         body: JSON.stringify(buildBody()),
@@ -397,11 +398,11 @@ function TtsExampleCard({ providerId }) {
 
   useEffect(() => {
     setLocalEndpoint(window.location.origin);
-    fetch("/api/keys")
+    fetch(apiPath("/api/keys"))
       .then((r) => r.json())
       .then((d) => { setApiKey((d.keys || []).find((k) => k.isActive !== false)?.key || ""); })
       .catch(() => {});
-    fetch("/api/tunnel/status")
+    fetch(apiPath("/api/tunnel/status"))
       .then((r) => r.json())
       .then((d) => { if (d.publicUrl) setTunnelEndpoint(d.publicUrl); })
       .catch(() => {});
@@ -912,16 +913,16 @@ function GenericExampleCard({ providerId, kind }) {
 
   useEffect(() => {
     setLocalEndpoint(window.location.origin);
-    fetch("/api/keys")
+    fetch(apiPath("/api/keys"))
       .then((r) => r.json())
       .then((d) => { setApiKey((d.keys || []).find((k) => k.isActive !== false)?.key || ""); })
       .catch(() => {});
-    fetch("/api/tunnel/status")
+    fetch(apiPath("/api/tunnel/status"))
       .then((r) => r.json())
       .then((d) => { if (d.publicUrl) setTunnelEndpoint(d.publicUrl); })
       .catch(() => {});
     // Load active connections of this provider for pinning
-    fetch("/api/providers/client")
+    fetch(apiPath("/api/providers/client"))
       .then((r) => r.json())
       .then((d) => {
         const conns = (d.connections || []).filter((c) => c.provider === providerId && c.isActive !== false);
@@ -1339,7 +1340,7 @@ export default function MediaProviderDetailPage() {
   const handleDeleteCustom = async () => {
     if (!confirm("Delete this Custom Embedding node?")) return;
     try {
-      const res = await fetch(`/api/provider-nodes/${id}`, { method: "DELETE" });
+      const res = await fetch(apiPath(`/api/provider-nodes/${id}`), { method: "DELETE" });
       if (res.ok) router.push(`/dashboard/media-providers/${kind}`);
     } catch (error) {
       console.log("Error deleting custom embedding node:", error);
@@ -1354,7 +1355,7 @@ export default function MediaProviderDetailPage() {
   useEffect(() => {
     if (!isCustom) return;
     let cancelled = false;
-    fetch("/api/provider-nodes", { cache: "no-store" })
+    fetch(apiPath("/api/provider-nodes"), { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
         if (cancelled) return;
@@ -1399,7 +1400,7 @@ export default function MediaProviderDetailPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
           <div className="size-12 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${provider.color}15` }}>
             <ProviderIcon
-              src={`/providers/${provider.id}.png`}
+              src={apiPath(`/providers/${provider.id}.png`)}
               alt={provider.name}
               size={48}
               className="object-contain rounded-lg max-w-[48px] max-h-[48px]"
