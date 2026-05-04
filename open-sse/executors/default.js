@@ -268,18 +268,40 @@ export class DefaultExecutor extends BaseExecutor {
 
   async refreshKimiCoding(refreshToken, proxyOptions = null) {
     const kimiHeaders = buildKimiHeaders();
-    const response = await proxyAwareFetch("https://auth.kimi.com/api/oauth/token", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "application/json",
-        ...kimiHeaders
-      },
-      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: "17e5f671-d194-4dfb-9706-5516cb48c098" })
-    }, proxyOptions);
-    if (!response.ok) return null;
-    const tokens = await response.json();
-    return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
+    const requestBody = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: "17e5f671-d194-4dfb-9706-5516cb48c098"
+    });
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const response = await proxyAwareFetch("https://auth.kimi.com/api/oauth/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Accept": "application/json",
+          ...kimiHeaders
+        },
+        body: requestBody
+      }, proxyOptions);
+
+      if (response.ok) {
+        const tokens = await response.json();
+        return {
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token || refreshToken,
+          expiresIn: tokens.expires_in
+        };
+      }
+
+      if (![429, 500, 502, 503, 504].includes(response.status) || attempt === 2) {
+        return null;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 1000));
+    }
+
+    return null;
   }
 
   async refreshKilocode(refreshToken, proxyOptions = null) {

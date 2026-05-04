@@ -2,6 +2,7 @@
  * OAuth Configuration Constants
  */
 import { platform, arch } from "os";
+import { KIMI_OAUTH_CLIENT_ID, KIMI_OAUTH_SCOPE } from "../../kimi/headers.js";
 
 /**
  * Get the platform enum value based on the current OS.
@@ -206,9 +207,10 @@ export const CURSOR_CONFIG = {
 
 // Kimi Coding OAuth Configuration (Device Code Flow)
 export const KIMI_CODING_CONFIG = {
-  clientId: process.env.KIMI_CODING_OAUTH_CLIENT_ID || "17e5f671-d194-4dfb-9706-5516cb48c098",
+  clientId: process.env.KIMI_CODING_OAUTH_CLIENT_ID || KIMI_OAUTH_CLIENT_ID,
   deviceCodeUrl: "https://auth.kimi.com/api/oauth/device_authorization",
   tokenUrl: "https://auth.kimi.com/api/oauth/token",
+  scope: KIMI_OAUTH_SCOPE,
 };
 
 // KiloCode OAuth Configuration (Custom Device Auth Flow)

@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { KiroService } from "@/lib/oauth/services/kiro";
-import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
+import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth.js";
 import { refreshGoogleToken, updateProviderCredentials, refreshKiroToken } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { buildKimiHeaders } from "../../../../../lib/kimi/headers.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -112,6 +113,18 @@ const PROVIDER_MODELS_CONFIG = {
     authHeader: "Authorization",
     authPrefix: "Bearer ",
     parseResponse: parseCodexModels
+  },
+  "kimi-coding": {
+    url: "https://api.kimi.com/coding/v1/models",
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...buildKimiHeaders(),
+    },
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    parseResponse: (data) => data?.data || [],
   },
   antigravity: {
     url: "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:models",
