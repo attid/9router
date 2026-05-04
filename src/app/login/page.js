@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card, Button, Input } from "@/shared/components";
 import { useRouter } from "next/navigation";
-import { apiPath, dashboardPath } from "@/lib/basePath";
+import { apiPath } from "@/lib/basePath";
 
 export default function LoginPage() {
   const [password, setPassword] = useState("");
@@ -27,7 +27,7 @@ export default function LoginPage() {
         if (res.ok) {
           const data = await res.json();
           if (data.requireLogin === false) {
-            router.push(dashboardPath("/dashboard"));
+            router.push("/dashboard");
             router.refresh();
             return;
           }
@@ -57,7 +57,7 @@ export default function LoginPage() {
       });
 
       if (res.ok) {
-        router.push(dashboardPath("/dashboard"));
+        router.push("/dashboard");
         router.refresh();
       } else {
         const data = await res.json();
