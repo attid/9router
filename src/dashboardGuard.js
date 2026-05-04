@@ -48,6 +48,14 @@ function isPublicApi(pathname) {
   );
 }
 
+function isPublicApiRequest(request) {
+  const { pathname } = request.nextUrl;
+  if (request.method === "GET" && pathname === "/api/settings") {
+    return true;
+  }
+  return isPublicApi(pathname);
+}
+
 async function hasValidToken(request) {
   const token = request.cookies.get("auth_token")?.value;
   if (!token) return false;
@@ -86,7 +94,7 @@ export async function proxy(request) {
   }
 
   // Protect all API endpoints except public ones
-  if (pathname.startsWith("/api/") && !isPublicApi(pathname)) {
+  if (pathname.startsWith("/api/") && !isPublicApiRequest(request)) {
     if (await hasValidCliToken(request) || await isAuthenticated(request))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
