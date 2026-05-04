@@ -31,6 +31,7 @@ function fakeRequest(pathname, { token } = {}) {
   return {
     nextUrl: { pathname },
     url: `http://localhost:20128${pathname}`,
+    method: "GET",
     cookies: { get: () => (token ? { value: token } : undefined) },
     headers: { get: () => "" },
   };
@@ -102,5 +103,18 @@ describe("dashboardGuard with BASE_PATH", () => {
     const { proxy } = await loadGuard({ BASE_PATH: "/9router" });
     const res = await proxy(fakeRequest("/api/v1/messages"));
     expect(res.kind).toBe("next");
+  });
+
+  it("allows unauthenticated GET /api/settings so login can initialize", async () => {
+    const { proxy } = await loadGuard({ BASE_PATH: "/9router" });
+    const res = await proxy(fakeRequest("/api/settings"));
+    expect(res.kind).toBe("next");
+  });
+
+  it("keeps unauthenticated PATCH /api/settings protected", async () => {
+    const { proxy } = await loadGuard({ BASE_PATH: "/9router" });
+    const res = await proxy({ ...fakeRequest("/api/settings"), method: "PATCH" });
+    expect(res.kind).toBe("json");
+    expect(res.init?.status).toBe(401);
   });
 });
