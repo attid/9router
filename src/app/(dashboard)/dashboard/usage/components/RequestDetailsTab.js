@@ -11,6 +11,7 @@ import { apiPath } from "@/lib/basePath";
 
 let providerNameCache = null;
 let providerNodesCache = null;
+let apiKeyNameCache = null;
 
 async function fetchProviderNames() {
   if (providerNameCache && providerNodesCache) {
@@ -32,6 +33,27 @@ async function fetchProviderNames() {
   };
 
   return { providerNameCache, providerNodesCache };
+}
+
+async function fetchApiKeyNames() {
+  if (apiKeyNameCache) return apiKeyNameCache;
+  try {
+    const res = await fetch(apiPath("/api/keys"));
+    const data = await res.json();
+    const keys = data.keys || [];
+    apiKeyNameCache = {};
+    for (const k of keys) {
+      if (k.key) apiKeyNameCache[k.key] = k.name || k.key;
+    }
+    return apiKeyNameCache;
+  } catch {
+    return {};
+  }
+}
+
+function getApiKeyName(apiKeyId, keyNameMap) {
+  if (!apiKeyId || !keyNameMap) return null;
+  return keyNameMap[apiKeyId] || null;
 }
 
 function getProviderName(providerId, cache) {
@@ -100,8 +122,12 @@ export default function RequestDetailsTab() {
   const [loading, setLoading] = useState(false);
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [streamTrace, setStreamTrace] = useState(null);
+  const [streamTraceLoading, setStreamTraceLoading] = useState(false);
+  const [streamTraceError, setStreamTraceError] = useState("");
   const [providers, setProviders] = useState([]);
   const [providerNameCache, setProviderNameCache] = useState(null);
+  const [keyNameMap, setKeyNameMap] = useState(null);
   const [filters, setFilters] = useState({
     provider: "",
     startDate: "",
@@ -116,6 +142,9 @@ export default function RequestDetailsTab() {
 
       const cache = await fetchProviderNames();
       setProviderNameCache(cache.providerNameCache);
+
+      const keyNames = await fetchApiKeyNames();
+      setKeyNameMap(keyNames);
     } catch (error) {
       console.error("Failed to fetch providers:", error);
     }
@@ -154,8 +183,29 @@ export default function RequestDetailsTab() {
 
   const handleViewDetail = (detail) => {
     setSelectedDetail(detail);
+    setStreamTrace(null);
+    setStreamTraceError("");
     setIsDrawerOpen(true);
   };
+
+  const handleDecodeStream = useCallback(async () => {
+    if (!selectedDetail?.id) return;
+
+    setStreamTraceLoading(true);
+    setStreamTraceError("");
+    try {
+      const res = await fetch(apiPath(`/api/usage/request-details/${selectedDetail.id}/stream-trace`));
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to decode stream trace");
+      }
+      setStreamTrace(data);
+    } catch (error) {
+      setStreamTraceError(error.message || "Failed to decode stream trace");
+    } finally {
+      setStreamTraceLoading(false);
+    }
+  }, [selectedDetail]);
 
   const handlePageChange = (newPage) => {
     setPagination(prev => ({ ...prev, page: newPage }));
@@ -170,10 +220,10 @@ export default function RequestDetailsTab() {
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <Card padding="md">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="flex min-w-0 flex-col gap-2">
+        <div className="flex flex-wrap gap-4">
+          <div className="flex flex-col gap-2">
             <label htmlFor="provider-filter" className="text-sm font-medium text-text-main">Provider</label>
             <select
               id="provider-filter"
@@ -182,7 +232,7 @@ export default function RequestDetailsTab() {
               className={cn(
                 "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-surface",
                 "text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20",
-                "w-full min-w-0 cursor-pointer"
+                "cursor-pointer min-w-[150px]"
               )}
             >
               <option value="">All Providers</option>
@@ -194,7 +244,7 @@ export default function RequestDetailsTab() {
             </select>
           </div>
           
-          <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex flex-col gap-2">
             <label htmlFor="start-date-filter" className="text-sm font-medium text-text-main">Start Date</label>
             <input
               id="start-date-filter"
@@ -203,12 +253,12 @@ export default function RequestDetailsTab() {
               onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
               className={cn(
                 "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-surface",
-                "w-full min-w-0 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20"
+                "text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20"
               )}
             />
           </div>
 
-          <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex flex-col gap-2">
             <label htmlFor="end-date-filter" className="text-sm font-medium text-text-main">End Date</label>
             <input
               id="end-date-filter"
@@ -217,18 +267,17 @@ export default function RequestDetailsTab() {
               onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
               className={cn(
                 "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-surface",
-                "w-full min-w-0 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20"
+                "text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20"
               )}
             />
           </div>
           
-          <div className="flex min-w-0 flex-col gap-2 sm:col-span-2 lg:col-span-1">
-            <span className="hidden text-sm font-medium text-text-main opacity-0 lg:block" aria-hidden="true">Clear</span>
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium text-text-main opacity-0" aria-hidden="true">Clear</span>
             <Button 
               variant="ghost" 
               onClick={handleClearFilters}
               disabled={!filters.provider && !filters.startDate && !filters.endDate}
-              className="w-full"
             >
               Clear Filters
             </Button>
@@ -238,13 +287,13 @@ export default function RequestDetailsTab() {
 
       <Card padding="none">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[880px]">
+          <table className="w-full">
             <thead>
               <tr className="border-b border-black/5 dark:border-white/5">
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Timestamp</th>
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Model</th>
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Provider</th>
-                <th className="text-right p-4 text-sm font-semibold text-text-main">Input Tokens</th>
+                <th className="text-right p-4 text-sm font-semibold text-text-main" title="paid / cached">Input Tokens</th>
                 <th className="text-right p-4 text-sm font-semibold text-text-main">Output Tokens</th>
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Latency</th>
                 <th className="text-center p-4 text-sm font-semibold text-text-main">Action</th>
@@ -272,19 +321,32 @@ export default function RequestDetailsTab() {
                     key={`${detail.id}-${index}`}
                     className="border-b border-black/5 dark:border-white/5 last:border-b-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
                   >
-                    <td className="whitespace-nowrap p-4 text-sm text-text-main">
+                    <td className="p-4 text-sm text-text-main">
                       {new Date(detail.timestamp).toLocaleString()}
                     </td>
-                    <td className="max-w-[260px] truncate p-4 font-mono text-sm text-text-main">
-                      {detail.model}
+                    <td className="p-4 text-sm text-text-main">
+                      <div className="font-mono">{detail.model}</div>
+                      {getApiKeyName(detail.apiKeyId, keyNameMap) && (
+                        <div className="text-xs text-text-muted">{getApiKeyName(detail.apiKeyId, keyNameMap)}</div>
+                      )}
                     </td>
-                    <td className="max-w-[180px] truncate p-4 text-sm text-text-main">
+                    <td className="p-4 text-sm text-text-main">
                        <span className="font-medium">
                          {getProviderName(detail.provider, providerNameCache)}
                        </span>
                      </td>
                     <td className="p-4 text-sm text-text-main text-right font-mono">
-                      {getInputTokens(detail.tokens).toLocaleString()}
+                      {(() => {
+                        const t = detail.tokens || {};
+                        const prompt = t.prompt_tokens || 0;
+                        const cacheRead = t.cache_read_input_tokens || t.cached_tokens || 0;
+                        const cacheCreation = t.cache_creation_input_tokens || 0;
+                        const paid = prompt + cacheCreation;
+                        if (cacheRead > 0 || cacheCreation > 0) {
+                          return <>{paid.toLocaleString()} <span className="text-text-muted">/ {cacheRead.toLocaleString()}</span></>;
+                        }
+                        return prompt.toLocaleString();
+                      })()}
                     </td>
                     <td className="p-4 text-sm text-text-main text-right font-mono">
                       {detail.tokens?.completion_tokens?.toLocaleString() || 0}
@@ -326,16 +388,20 @@ export default function RequestDetailsTab() {
 
       <Drawer
         isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
+        onClose={() => {
+          setIsDrawerOpen(false);
+          setStreamTrace(null);
+          setStreamTraceError("");
+        }}
         title="Request Details"
         width="lg"
       >
         {selectedDetail && (
           <div className="space-y-6">
-            <div className="grid min-w-0 grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <span className="text-text-muted">ID:</span>{" "}
-                <span className="break-all font-mono text-text-main">{selectedDetail.id}</span>
+                <span className="text-text-main font-mono">{selectedDetail.id}</span>
               </div>
               <div>
                 <span className="text-text-muted">Timestamp:</span>{" "}
@@ -346,8 +412,26 @@ export default function RequestDetailsTab() {
                  <span className="text-text-main font-medium">{getProviderName(selectedDetail.provider, providerNameCache)}</span>
                </div>
               <div>
+                <span className="text-text-muted">API Key:</span>{" "}
+                <span className="text-text-main font-medium">
+                  {getApiKeyName(selectedDetail.apiKeyId, keyNameMap) || <span className="text-text-muted italic">unknown</span>}
+                </span>
+              </div>
+              <div>
                 <span className="text-text-muted">Model:</span>{" "}
                 <span className="text-text-main font-mono">{selectedDetail.model}</span>
+              </div>
+              <div className="col-span-2">
+                <span className="text-text-muted">Client Endpoint:</span>{" "}
+                <span className="text-text-main font-mono break-all">
+                  {selectedDetail.clientEndpoint || <span className="text-text-muted italic">unknown</span>}
+                </span>
+              </div>
+              <div className="col-span-2">
+                <span className="text-text-muted">Upstream URL:</span>{" "}
+                <span className="text-text-main font-mono break-all">
+                  {selectedDetail.providerUrl || <span className="text-text-muted italic">unknown</span>}
+                </span>
               </div>
               <div>
                 <span className="text-text-muted">Status:</span>{" "}
@@ -367,7 +451,13 @@ export default function RequestDetailsTab() {
               <div>
                 <span className="text-text-muted">Input Tokens:</span>{" "}
                 <span className="text-text-main font-mono">
-                  {getInputTokens(selectedDetail.tokens).toLocaleString()}
+                  {(() => {
+                    const t = selectedDetail.tokens || {};
+                    const prompt = t.prompt_tokens || 0;
+                    const cacheRead = t.cache_read_input_tokens || t.cached_tokens || 0;
+                    const cacheCreation = t.cache_creation_input_tokens || 0;
+                    return (prompt + cacheRead + cacheCreation).toLocaleString();
+                  })()}
                 </span>
               </div>
               <div>
@@ -376,18 +466,40 @@ export default function RequestDetailsTab() {
                   {selectedDetail.tokens?.completion_tokens?.toLocaleString() || 0}
                 </span>
               </div>
+              {(() => {
+                const t = selectedDetail.tokens || {};
+                const cacheRead = t.cache_read_input_tokens || t.cached_tokens || 0;
+                const cacheCreation = t.cache_creation_input_tokens || 0;
+                if (!cacheRead && !cacheCreation) return null;
+                return (
+                  <>
+                    <div>
+                      <span className="text-text-muted">Non-cached:</span>{" "}
+                      <span className="text-text-main font-mono">{(t.prompt_tokens || 0).toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-text-muted">Cache Read:</span>{" "}
+                      <span className="text-text-main font-mono">{cacheRead.toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-text-muted">Cache Creation:</span>{" "}
+                      <span className="text-text-main font-mono">{cacheCreation.toLocaleString()}</span>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
             
             <div className="space-y-4">
               <CollapsibleSection title="1. Client Request (Input)" defaultOpen={true} icon="input">
-                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
+                <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5 select-all">
                   {JSON.stringify(selectedDetail.request, null, 2)}
                 </pre>
               </CollapsibleSection>
 
               {selectedDetail.providerRequest && (
                 <CollapsibleSection title="2. Provider Request (Translated)" icon="translate">
-                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
+                  <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5 select-all">
                     {JSON.stringify(selectedDetail.providerRequest, null, 2)}
                   </pre>
                 </CollapsibleSection>
@@ -395,7 +507,7 @@ export default function RequestDetailsTab() {
 
               {selectedDetail.providerResponse && (
                 <CollapsibleSection title="3. Provider Response (Raw)" icon="data_object">
-                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
+                  <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5 select-all">
                     {typeof selectedDetail.providerResponse === 'object'
                       ? JSON.stringify(selectedDetail.providerResponse, null, 2)
                       : selectedDetail.providerResponse
@@ -411,7 +523,7 @@ export default function RequestDetailsTab() {
                       <span className="material-symbols-outlined text-[16px]">psychology</span>
                       Thinking Process
                     </h4>
-                    <pre className="max-h-[200px] max-w-full overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 font-mono text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100 sm:p-4">
+                    <pre className="bg-amber-50 dark:bg-amber-950/30 p-4 rounded-lg overflow-auto max-h-[200px] text-xs font-mono text-amber-900 dark:text-amber-100 border border-amber-200 dark:border-amber-800 select-all">
                       {selectedDetail.response.thinking}
                     </pre>
                   </div>
@@ -420,10 +532,118 @@ export default function RequestDetailsTab() {
                 <h4 className="font-semibold text-text-main mb-2 text-xs uppercase tracking-wide opacity-70">
                   Content
                 </h4>
-                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
+                <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5 select-all">
                   {selectedDetail.response?.content || "[No content]"}
                 </pre>
               </CollapsibleSection>
+
+              {(selectedDetail.response?.meta?.raw_sse_b64 || selectedDetail.response?.meta?.raw_sse_tail_b64) && (
+                <CollapsibleSection title="5. Stream Trace (On Demand)" icon="network_node">
+                  <div className="flex flex-col gap-4">
+                    {!streamTrace && (
+                      <div className="flex items-center gap-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          icon="bug_report"
+                          onClick={handleDecodeStream}
+                          loading={streamTraceLoading}
+                        >
+                          Decode Stream
+                        </Button>
+                        <p className="text-xs text-text-muted">
+                          Decodes stored raw SSE only when explicitly requested.
+                        </p>
+                      </div>
+                    )}
+
+                    {streamTraceError && (
+                      <p className="text-sm text-red-600">{streamTraceError}</p>
+                    )}
+
+                    {streamTrace && (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-3 gap-3 text-sm">
+                          <div className="rounded-lg border border-black/5 dark:border-white/5 p-3">
+                            <div className="text-text-muted text-xs uppercase tracking-wide">Events</div>
+                            <div className="font-mono text-text-main">{streamTrace.events?.length || 0}</div>
+                          </div>
+                          <div className="rounded-lg border border-black/5 dark:border-white/5 p-3">
+                            <div className="text-text-muted text-xs uppercase tracking-wide">Tools</div>
+                            <div className="font-mono text-text-main">{streamTrace.tools?.length || 0}</div>
+                          </div>
+                          <div className="rounded-lg border border-black/5 dark:border-white/5 p-3">
+                            <div className="text-text-muted text-xs uppercase tracking-wide">Errors</div>
+                            <div className="font-mono text-text-main">{streamTrace.errors?.length || 0}</div>
+                          </div>
+                        </div>
+
+                        {streamTrace.errors?.length > 0 && (
+                          <div className="space-y-2">
+                            <h4 className="font-semibold text-text-main text-xs uppercase tracking-wide opacity-70">Errors</h4>
+                            <div className="space-y-2">
+                              {streamTrace.errors.map((error, index) => (
+                                <div key={`${error.type}-${index}`} className="rounded-lg border border-red-200/60 dark:border-red-900/60 bg-red-50/80 dark:bg-red-950/20 p-3">
+                                  <div className="font-mono text-xs text-red-700 dark:text-red-300">{error.type}</div>
+                                  <div className="text-sm text-red-800 dark:text-red-200">{error.message}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {streamTrace.tools?.length > 0 && (
+                          <div className="space-y-2">
+                            <h4 className="font-semibold text-text-main text-xs uppercase tracking-wide opacity-70">Tools</h4>
+                            <div className="space-y-2">
+                              {streamTrace.tools.map((tool, index) => (
+                                <div key={`${tool.id || tool.name}-${index}`} className="rounded-lg border border-black/5 dark:border-white/5 p-3">
+                                  <div className="text-sm font-medium text-text-main">{tool.name}</div>
+                                  {tool.id && <div className="text-xs font-mono text-text-muted">{tool.id}</div>}
+                                  <pre className="mt-2 bg-black/5 dark:bg-white/5 p-3 rounded-lg overflow-auto max-h-[200px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5 select-all">
+                                    {JSON.stringify(tool.input, null, 2)}
+                                  </pre>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="space-y-2">
+                          <h4 className="font-semibold text-text-main text-xs uppercase tracking-wide opacity-70">Event Timeline</h4>
+                          <div className="space-y-2">
+                            {streamTrace.events?.map((event) => (
+                              <div key={`${event.index}-${event.event}`} className="rounded-lg border border-black/5 dark:border-white/5 p-3">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="font-mono text-xs text-text-main">{event.event}</span>
+                                  <span className="text-xs text-text-muted">#{event.index + 1}</span>
+                                </div>
+                                <div className="mt-1 text-sm text-text-muted break-words">{event.summary || event.event}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {streamTrace.rawProviderSse && (
+                          <CollapsibleSection title="Raw Provider SSE" icon="data_object">
+                            <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5 select-all">
+                              {streamTrace.rawProviderSse}
+                            </pre>
+                          </CollapsibleSection>
+                        )}
+
+                        {streamTrace.rawClientSse && (
+                          <CollapsibleSection title="Raw Client SSE Tail" icon="data_object">
+                            <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5 select-all">
+                              {streamTrace.rawClientSse}
+                            </pre>
+                          </CollapsibleSection>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </CollapsibleSection>
+              )}
             </div>
           </div>
         )}
