@@ -935,7 +935,7 @@ function GenericExampleCard({ providerId, kind }) {
   if (!kindConfig || !exConfig) return null;
 
   const endpoint = useTunnel ? tunnelEndpoint : localEndpoint;
-  const apiPath = kindConfig.endpoint.path;
+  const endpointPath = kindConfig.endpoint.path;
   // For kinds without model concept (webSearch/webFetch), use providerAlias directly
   const modelFull = kindModels.length === 0 ? providerAlias : (selectedModel ? `${providerAlias}/${selectedModel}` : "");
 
@@ -957,7 +957,7 @@ function GenericExampleCard({ providerId, kind }) {
   // Streaming supported for codex image (Plus/Pro accounts) — disabled when binary output requested
   const wantBinary = kind === "image" && imageOutputFormat === "binary";
   const useStreaming = kind === "image" && providerId === "codex" && !wantBinary;
-  const apiPathWithQuery = `${apiPath}${wantBinary ? "?response_format=binary" : ""}`;
+  const apiPathWithQuery = `${endpointPath}${wantBinary ? "?response_format=binary" : ""}`;
   const headersPreview = `-H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${apiKey || "YOUR_KEY"}"${pinnedConnectionId ? ` \\\n  -H "x-connection-id: ${pinnedConnectionId}"` : ""}${useStreaming ? ` \\\n  -H "Accept: text/event-stream"` : ""}`;
   const curlSnippet = `curl -X ${kindConfig.endpoint.method} ${endpoint}${apiPathWithQuery} \\
   ${headersPreview.replace(/\\\n  /g, "\\\n  ")} \\
@@ -1080,7 +1080,7 @@ function GenericExampleCard({ providerId, kind }) {
         <Row label="Endpoint">
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             <span className="w-full min-w-0 flex-1 px-3 py-1.5 text-sm font-mono text-text-main bg-sidebar rounded-lg truncate">
-              {endpoint}{apiPath}
+              {endpoint}{endpointPath}
             </span>
             {tunnelEndpoint && (
               <button
