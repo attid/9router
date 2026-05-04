@@ -139,7 +139,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         setIsDeviceCode(true);
         setStep("waiting");
 
-        const deviceCodeUrl = new URL(`/api/oauth/${provider}/device-code`, window.location.origin);
+        const deviceCodeUrl = new URL(apiPath(`/api/oauth/${provider}/device-code`), window.location.origin);
         if (provider === "kiro" && idcConfig?.startUrl) {
           deviceCodeUrl.searchParams.set("start_url", idcConfig.startUrl);
           if (idcConfig.region) {
@@ -192,7 +192,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       }
 
       // Build authorize URL, optionally passing provider-specific metadata (e.g. gitlab clientId)
-      const authorizeUrl = new URL(`/api/oauth/${provider}/authorize`, window.location.origin);
+      const authorizeUrl = new URL(apiPath(`/api/oauth/${provider}/authorize`), window.location.origin);
       authorizeUrl.searchParams.set("redirect_uri", redirectUri);
       if (oauthMeta) {
         Object.entries(oauthMeta).forEach(([k, v]) => { if (v) authorizeUrl.searchParams.set(k, v); });
