@@ -27,6 +27,10 @@ vi.mock("@/shared/constants/providers", () => ({
   isAnthropicCompatibleProvider: vi.fn(() => false),
 }));
 
+vi.mock("@/lib/basePath", () => ({
+  apiPath: (value) => value,
+}));
+
 describe("POST /api/providers/[id]/test-models for kimi-coding", () => {
   let POST;
   let getProviderConnectionById;
