@@ -174,7 +174,7 @@ export default function ComboDetailPage() {
       const body = EXAMPLE_BODIES[combo.kind](combo.name);
       const headers = { "Content-Type": "application/json" };
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-      const res = await fetch(`/api${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+      const res = await fetch(apiPath(`/api${path}`), { method: "POST", headers, body: JSON.stringify(body) });
       const latencyMs = Date.now() - start;
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
