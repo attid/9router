@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const refreshTokenByProviderMock = vi.fn();
+const updateProviderCredentialsMock = vi.fn();
+
 vi.mock("next/server", () => ({
   NextResponse: {
     json: vi.fn((body, init) => ({
@@ -29,9 +32,14 @@ vi.mock("@/lib/oauth/constants/oauth.js", () => ({
 
 vi.mock("@/sse/services/tokenRefresh", () => ({
   refreshGoogleToken: vi.fn(),
-  updateProviderCredentials: vi.fn(),
+  updateProviderCredentials: updateProviderCredentialsMock,
   refreshKiroToken: vi.fn(),
-  refreshTokenByProvider: vi.fn(),
+  refreshTokenByProvider: refreshTokenByProviderMock,
+}));
+
+vi.mock("../../src/sse/services/tokenRefresh.js", () => ({
+  refreshTokenByProvider: refreshTokenByProviderMock,
+  updateProviderCredentials: updateProviderCredentialsMock,
 }));
 
 vi.mock("open-sse/config/providers.js", () => ({
@@ -41,14 +49,11 @@ vi.mock("open-sse/config/providers.js", () => ({
 describe("GET /api/providers/[id]/models for kimi-coding", () => {
   let GET;
   let getProviderConnectionById;
-  let refreshTokenByProvider;
-  let updateProviderCredentials;
   const originalFetch = global.fetch;
 
   beforeEach(async () => {
     vi.clearAllMocks();
     ({ getProviderConnectionById } = await import("@/models"));
-    ({ refreshTokenByProvider, updateProviderCredentials } = await import("@/sse/services/tokenRefresh"));
     ({ GET } = await import("../../src/app/api/providers/[id]/models/route.js"));
   });
 
@@ -95,7 +100,7 @@ describe("GET /api/providers/[id]/models for kimi-coding", () => {
       refreshToken: "refresh-token",
     });
 
-    refreshTokenByProvider.mockResolvedValue({
+    refreshTokenByProviderMock.mockResolvedValue({
       accessToken: "fresh-access-token",
       refreshToken: "fresh-refresh-token",
       expiresIn: 900,
@@ -122,14 +127,14 @@ describe("GET /api/providers/[id]/models for kimi-coding", () => {
     expect(response.body.models).toEqual([
       { id: "kimi-k2.6", display_name: "Kimi K2.6" },
     ]);
-    expect(refreshTokenByProvider).toHaveBeenCalledWith(
+    expect(refreshTokenByProviderMock).toHaveBeenCalledWith(
       "kimi-coding",
       expect.objectContaining({
         accessToken: "expired-access-token",
         refreshToken: "refresh-token",
       })
     );
-    expect(updateProviderCredentials).toHaveBeenCalledWith("conn-1", {
+    expect(updateProviderCredentialsMock).toHaveBeenCalledWith("conn-1", {
       accessToken: "fresh-access-token",
       refreshToken: "fresh-refresh-token",
       expiresIn: 900,
