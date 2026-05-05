@@ -1,9 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   buildRequestPayload,
   extractAssistantText,
   fileToDataUrl,
   maskApiKey,
+  scheduleRequestAbort,
 } from "../../src/app/(dashboard)/dashboard/chat-test/chatTestUtils.js";
 
 describe("chatTestUtils.buildRequestPayload", () => {
@@ -148,5 +149,33 @@ describe("chatTestUtils.maskApiKey", () => {
 
   it("masks short keys without breaking", () => {
     expect(maskApiKey("abcd")).toBe("ab...cd");
+  });
+});
+
+describe("chatTestUtils.scheduleRequestAbort", () => {
+  it("does not abort when timeout is disabled", () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+
+    const cleanup = scheduleRequestAbort(controller, 0);
+    vi.advanceTimersByTime(120000);
+
+    expect(controller.signal.aborted).toBe(false);
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it("aborts when a positive timeout is provided", () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+
+    const cleanup = scheduleRequestAbort(controller, 50);
+    vi.advanceTimersByTime(49);
+    expect(controller.signal.aborted).toBe(false);
+
+    vi.advanceTimersByTime(1);
+    expect(controller.signal.aborted).toBe(true);
+    cleanup();
+    vi.useRealTimers();
   });
 });
