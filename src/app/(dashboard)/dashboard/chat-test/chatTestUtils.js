@@ -1,5 +1,19 @@
 export const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 
+export function scheduleRequestAbort(controller, timeoutMs = 0) {
+  if (!controller || typeof controller.abort !== "function") {
+    return () => {};
+  }
+
+  const normalizedTimeout = Number(timeoutMs);
+  if (!Number.isFinite(normalizedTimeout) || normalizedTimeout <= 0) {
+    return () => {};
+  }
+
+  const timeoutId = setTimeout(() => controller.abort(), normalizedTimeout);
+  return () => clearTimeout(timeoutId);
+}
+
 export function buildRequestPayload({ apiMode, model, prompt, imageDataUrl }) {
   const normalizedPrompt = String(prompt || "").trim();
   const normalizedImage = imageDataUrl || null;

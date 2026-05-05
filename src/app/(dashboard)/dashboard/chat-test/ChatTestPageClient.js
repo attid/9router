@@ -10,6 +10,7 @@ import {
   fileToDataUrl,
   MAX_IMAGE_SIZE_BYTES,
   maskApiKey,
+  scheduleRequestAbort,
 } from "./chatTestUtils.js";
 
 const KEY_STORAGE = "chatTest.selectedKeyId";
@@ -178,7 +179,7 @@ export default function ChatTestPageClient() {
     setResult(null);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000);
+    const cleanupAbort = scheduleRequestAbort(controller);
 
     try {
       const payload = buildRequestPayload({ apiMode, model, prompt, imageDataUrl });
@@ -217,7 +218,7 @@ export default function ChatTestPageClient() {
         setError(err?.message || "Request failed");
       }
     } finally {
-      clearTimeout(timeoutId);
+      cleanupAbort();
       setIsSending(false);
     }
   };
