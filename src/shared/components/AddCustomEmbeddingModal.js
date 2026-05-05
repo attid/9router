@@ -41,7 +41,7 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
     if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
     setSubmitting(true);
     try {
-      const url = isEdit ? `/api/provider-nodes/${node.id}` : "/api/provider-nodes";
+      const url = isEdit ? apiPath(`/api/provider-nodes/${node.id}`) : apiPath("/api/provider-nodes");
       const method = isEdit ? "PUT" : "POST";
       const payload = {
         name: formData.name,

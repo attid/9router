@@ -97,11 +97,14 @@ export default function ProxyPoolsPage() {
     setSaving(true);
     try {
       const isEdit = !!editingProxyPool;
-      const res = await fetch(isEdit ? `/api/proxy-pools/${editingProxyPool.id}` : "/api/proxy-pools", {
+      const res = await fetch(
+        isEdit ? apiPath(`/api/proxy-pools/${editingProxyPool.id}`) : apiPath("/api/proxy-pools"),
+        {
         method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-      });
+        }
+      );
 
       if (res.ok) {
         await fetchProxyPools();

@@ -12,12 +12,12 @@ const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
 
 
 const STATUS_ENDPOINTS = {
-  claude: "/api/cli-tools/claude-settings",
-  codex: "/api/cli-tools/codex-settings",
-  opencode: "/api/cli-tools/opencode-settings",
-  droid: "/api/cli-tools/droid-settings",
-  openclaw: "/api/cli-tools/openclaw-settings",
-  hermes: "/api/cli-tools/hermes-settings",
+  claude: apiPath("/api/cli-tools/claude-settings"),
+  codex: apiPath("/api/cli-tools/codex-settings"),
+  opencode: apiPath("/api/cli-tools/opencode-settings"),
+  droid: apiPath("/api/cli-tools/droid-settings"),
+  openclaw: apiPath("/api/cli-tools/openclaw-settings"),
+  hermes: apiPath("/api/cli-tools/hermes-settings"),
 };
 
 export default function CLIToolsPageClient({ machineId }) {

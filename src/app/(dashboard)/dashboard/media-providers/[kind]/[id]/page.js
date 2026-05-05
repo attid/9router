@@ -470,7 +470,7 @@ function TtsExampleCard({ providerId }) {
         // Use provider-specific apiEndpoint if available, else default to edge-tts voices API
         const url = config.apiEndpoint
           ? config.apiEndpoint
-          : `/api/media-providers/tts/voices?provider=${providerId === "local-device" ? "local-device" : "edge-tts"}`;
+          : apiPath(`/api/media-providers/tts/voices?provider=${providerId === "local-device" ? "local-device" : "edge-tts"}`);
         const r = await fetch(url);
         const d = await r.json();
         if (d.error) { setModalError(d.error); return; }
@@ -531,7 +531,7 @@ function TtsExampleCard({ providerId }) {
     try {
       const headers = { "Content-Type": "application/json" };
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-      const url = `/api/v1/audio/speech${responseFormat === "json" ? "?response_format=json" : ""}`;
+      const url = apiPath(`/api/v1/audio/speech${responseFormat === "json" ? "?response_format=json" : ""}`);
       const res = await fetch(url, {
         method: "POST",
         headers,
@@ -978,7 +978,7 @@ function GenericExampleCard({ providerId, kind }) {
       if (pinnedConnectionId) headers["x-connection-id"] = pinnedConnectionId;
       if (useStreaming) headers["Accept"] = "text/event-stream";
       const body = { ...requestBody, model: modelFull };
-      const res = await fetch(`/api${apiPathWithQuery}`, {
+      const res = await fetch(apiPath(`/api${apiPathWithQuery}`), {
         method: kindConfig.endpoint.method,
         headers,
         body: JSON.stringify(body),
