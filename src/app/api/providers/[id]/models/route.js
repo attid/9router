@@ -3,9 +3,10 @@ import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth.js";
-import { refreshGoogleToken, refreshKiroToken, refreshTokenByProvider, updateProviderCredentials } from "@/sse/services/tokenRefresh";
+import { refreshGoogleToken, refreshKiroToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { buildKimiHeaders } from "../../../../../lib/kimi/headers.js";
+import { fetchKimiCodingModels } from "../../../../../lib/kimi/models.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -66,22 +67,6 @@ const createOpenAIModelsConfig = (url) => ({
   authPrefix: "Bearer ",
   parseResponse: parseOpenAIStyleModels
 });
-
-const maybeRefreshModelsToken = async (connection, response) => {
-  if (connection.provider !== "kimi-coding") return null;
-  if (response.status !== 401 || !connection.refreshToken) return null;
-
-  const refreshed = await refreshTokenByProvider(connection.provider, connection);
-  if (!refreshed?.accessToken) return null;
-
-  await updateProviderCredentials(connection.id, {
-    accessToken: refreshed.accessToken,
-    refreshToken: refreshed.refreshToken || connection.refreshToken,
-    expiresIn: refreshed.expiresIn,
-  });
-
-  return refreshed.accessToken;
-};
 
 const resolveQwenModelsUrl = (connection) => {
   const fallback = "https://portal.qwen.ai/v1/models";
@@ -464,6 +449,23 @@ export async function GET(request, { params }) {
       });
     }
 
+    if (connection.provider === "kimi-coding") {
+      try {
+        const models = await fetchKimiCodingModels(connection);
+        return NextResponse.json({
+          provider: connection.provider,
+          connectionId: connection.id,
+          models,
+        });
+      } catch (error) {
+        console.log(`Error fetching models from ${connection.provider}:`, error.body || error.message);
+        return NextResponse.json(
+          { error: error.message || "Failed to fetch models" },
+          { status: error.status || 500 }
+        );
+      }
+    }
+
     const config = PROVIDER_MODELS_CONFIG[connection.provider];
     if (!config) {
       return NextResponse.json(
@@ -503,16 +505,7 @@ export async function GET(request, { params }) {
       fetchOptions.body = JSON.stringify(config.body);
     }
 
-    let response = await fetch(url, fetchOptions);
-
-    const refreshedAccessToken = await maybeRefreshModelsToken(connection, response);
-    if (refreshedAccessToken) {
-      const retryHeaders = { ...headers };
-      if (config.authHeader && !config.authQuery) {
-        retryHeaders[config.authHeader] = (config.authPrefix || "") + refreshedAccessToken;
-      }
-      response = await fetch(url, { ...fetchOptions, headers: retryHeaders });
-    }
+    const response = await fetch(url, fetchOptions);
 
     if (!response.ok) {
       const errorText = await response.text();

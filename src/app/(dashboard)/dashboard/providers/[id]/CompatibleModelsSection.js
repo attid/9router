@@ -184,7 +184,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-text-muted">
-        Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually or import them from the /models endpoint.
+        Add models manually or import them from the provider&apos;s `/models` endpoint.
       </p>
 
       <div className="flex items-end gap-2 flex-wrap">
@@ -196,7 +196,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
             value={newModel}
             onChange={(e) => setNewModel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-            placeholder={isAnthropic ? "claude-3-opus-20240229" : "gpt-4o"}
+            placeholder={isAnthropic ? "claude-3-opus-20240229" : "gpt-4o or kimi-for-coding"}
             className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
           />
         </div>

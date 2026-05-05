@@ -65,8 +65,8 @@ export async function POST(request, { params }) {
 
     let models = getProviderModels(alias);
 
-    // Compatible providers: fetch live model list
-    if (isCompatible && models.length === 0) {
+    // Providers with live /models support: fetch dynamic list when no local static list exists
+    if ((isCompatible || providerId === "kimi-coding") && models.length === 0) {
       try {
         const modelsRes = await fetch(`${getBaseUrl(request)}${apiPath(`/api/providers/${id}/models`)}`);
         if (modelsRes.ok) {

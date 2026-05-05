@@ -1,6 +1,7 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { getProviderAlias, isAnthropicCompatibleProvider, isOpenAICompatibleProvider } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { extractKimiCodingModelIds, fetchKimiCodingModels } from "../../../../lib/kimi/models.js";
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -62,6 +63,15 @@ async function fetchCompatibleModelIds(connection) {
           .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "")
       )
     );
+  } catch {
+    return [];
+  }
+}
+
+async function fetchKimiCodingModelIds(connection) {
+  try {
+    const models = await fetchKimiCodingModels(connection);
+    return extractKimiCodingModelIds(models);
   } catch {
     return [];
   }
@@ -185,6 +195,7 @@ export async function GET() {
           Array.isArray(enabledModels) && enabledModels.length > 0;
         const isCompatibleProvider =
           isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
+        const usesDynamicModels = isCompatibleProvider || providerId === "kimi-coding";
 
         // Default: if no explicit selection, all static models are active.
         // For compatible providers with no explicit selection, fetch remote /models dynamically.
@@ -199,8 +210,10 @@ export async function GET() {
             )
           : providerModels.map((model) => model.id);
 
-        if (isCompatibleProvider && rawModelIds.length === 0 && !UPSTREAM_CONNECTION_RE.test(providerId)) {
-          rawModelIds = await fetchCompatibleModelIds(conn);
+        if (usesDynamicModels && rawModelIds.length === 0 && !UPSTREAM_CONNECTION_RE.test(providerId)) {
+          rawModelIds = providerId === "kimi-coding"
+            ? await fetchKimiCodingModelIds(conn)
+            : await fetchCompatibleModelIds(conn);
         }
 
         const modelIds = rawModelIds
