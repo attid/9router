@@ -6,6 +6,7 @@ import { Card, Button, Input, Modal, CardSkeleton, Toggle } from "@/shared/compo
 import ModelSelectModal from "@/shared/components/ModelSelectModal";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { apiPath } from "@/lib/basePath";
+import { buildKeyRoutePath, buildKeyUsagePath } from "./keyPaths.js";
 
 const TUNNEL_BENEFITS = [
   { icon: "public", title: "Access Anywhere", desc: "Use your API from any network" },
@@ -125,7 +126,7 @@ export default function APIPageClient({ machineId }) {
     const usage = {};
     for (const key of keys) {
       try {
-        const res = await fetch(`/api/keys/${key.id}/usage`);
+        const res = await fetch(buildKeyUsagePath(key.id));
         if (res.ok) {
           usage[key.id] = await res.json();
         }
@@ -719,7 +720,7 @@ export default function APIPageClient({ machineId }) {
       weekly: editLimitsValues.weekly ? parseInt(editLimitsValues.weekly, 10) : null,
     };
     try {
-      const res = await fetch(`/api/keys/${keyId}`, {
+      const res = await fetch(buildKeyRoutePath(keyId), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ limits }),
