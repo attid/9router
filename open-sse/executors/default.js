@@ -5,14 +5,19 @@ import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
+import { applyKimiRequestFields } from "../utils/kimiRequest.js";
 
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
-  transformRequest(model, body) {
-    return injectReasoningContent({ provider: this.provider, model, body });
+  transformRequest(model, body, stream, credentials) {
+    const transformed = injectReasoningContent({ provider: this.provider, model, body });
+    if (this.provider === "kimi-coding") {
+      return applyKimiRequestFields(transformed, credentials?.connectionId);
+    }
+    return transformed;
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
@@ -33,8 +38,6 @@ export class DefaultExecutor extends BaseExecutor {
       case "kimi":
       case "minimax":
       case "minimax-cn":
-        return `${this.config.baseUrl}?beta=true`;
-      case "kimi-coding":
         return `${this.config.baseUrl}?beta=true`;
       case "gemini":
         return `${this.config.baseUrl}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
