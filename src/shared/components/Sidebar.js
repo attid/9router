@@ -29,6 +29,7 @@ const navItems = [
 ];
 
 const debugItems = [
+  { href: "/dashboard/chat-test", label: "Chat Test", icon: "chat" },
   { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
   { href: "/dashboard/translator", label: "Translator", icon: "translate" },
 ];
