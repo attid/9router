@@ -21,7 +21,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive, limits } = body;
+    const { isActive, limits, allowedModels } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -44,6 +44,16 @@ export async function PUT(request, { params }) {
         }
       }
       updateData.limits = limits;
+    }
+
+    if (allowedModels !== undefined) {
+      if (allowedModels !== null && !Array.isArray(allowedModels)) {
+        return NextResponse.json({ error: "allowedModels must be an array or null" }, { status: 400 });
+      }
+      if (Array.isArray(allowedModels) && allowedModels.some(m => typeof m !== "string" || !m.trim())) {
+        return NextResponse.json({ error: "allowedModels must contain non-empty strings" }, { status: 400 });
+      }
+      updateData.allowedModels = allowedModels;
     }
 
     const updated = await updateApiKey(id, updateData);

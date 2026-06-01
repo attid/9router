@@ -85,6 +85,7 @@ export async function exportDb() {
       machineId: r.machineId,
       isActive: r.isActive === 1,
       limits: parseJson(r.limits, null),
+      allowedModels: parseJson(r.allowedModels, null),
       createdAt: r.createdAt,
     })),
     combos: db.all(`SELECT * FROM combos`).map((r) => ({ id: r.id, name: r.name, kind: r.kind, models: parseJson(r.models, []), createdAt: r.createdAt, updatedAt: r.updatedAt })),
@@ -146,7 +147,7 @@ export async function importDb(payload) {
     }
     for (const k of payload.apiKeys || []) {
       db.run(
-        `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, limits, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, limits, allowedModels, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           k.id,
           k.key,
@@ -154,6 +155,7 @@ export async function importDb(payload) {
           k.machineId || null,
           k.isActive === false ? 0 : 1,
           stringifyJson(k.limits || null),
+          stringifyJson(k.allowedModels || null),
           k.createdAt || new Date().toISOString(),
         ]
       );

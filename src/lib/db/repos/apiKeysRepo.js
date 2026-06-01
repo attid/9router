@@ -11,6 +11,7 @@ function rowToKey(row) {
     machineId: row.machineId,
     isActive: row.isActive === 1 || row.isActive === true,
     limits: parseJson(row.limits, null),
+    allowedModels: parseJson(row.allowedModels, null),
     createdAt: row.createdAt,
   };
 }
@@ -36,10 +37,18 @@ function normalizeLimits(limits, existing = {}) {
   };
 }
 
-export async function createApiKey(name, machineId, limits = null) {
+function normalizeAllowedModels(allowedModels) {
+  if (!Array.isArray(allowedModels) || allowedModels.length === 0) return null;
+  return allowedModels;
+}
+
+export async function createApiKey(name, machineId, options = null) {
   if (!machineId) throw new Error("machineId is required");
   const db = await getAdapter();
   const { generateApiKeyWithMachine } = await import("@/shared/utils/apiKey");
+  const opts = options && typeof options === "object" && !Array.isArray(options)
+    ? options
+    : { limits: options };
   const result = generateApiKeyWithMachine(machineId);
   const apiKey = {
     id: uuidv4(),
@@ -47,12 +56,22 @@ export async function createApiKey(name, machineId, limits = null) {
     key: result.key,
     machineId,
     isActive: true,
-    limits: normalizeLimits(limits),
+    limits: normalizeLimits(opts.limits),
+    allowedModels: normalizeAllowedModels(opts.allowedModels),
     createdAt: new Date().toISOString(),
   };
   db.run(
-    `INSERT INTO apiKeys(id, key, name, machineId, isActive, limits, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
-    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, stringifyJson(apiKey.limits), apiKey.createdAt]
+    `INSERT INTO apiKeys(id, key, name, machineId, isActive, limits, allowedModels, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      apiKey.id,
+      apiKey.key,
+      apiKey.name,
+      apiKey.machineId,
+      1,
+      stringifyJson(apiKey.limits),
+      stringifyJson(apiKey.allowedModels),
+      apiKey.createdAt,
+    ]
   );
   return apiKey;
 }
@@ -67,9 +86,20 @@ export async function updateApiKey(id, data) {
     if (data.limits !== undefined) {
       merged.limits = normalizeLimits(data.limits, rowToKey(row).limits || {});
     }
+    if (data.allowedModels !== undefined) {
+      merged.allowedModels = normalizeAllowedModels(data.allowedModels);
+    }
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, limits = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, stringifyJson(merged.limits), id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, limits = ?, allowedModels = ? WHERE id = ?`,
+      [
+        merged.key,
+        merged.name,
+        merged.machineId,
+        merged.isActive ? 1 : 0,
+        stringifyJson(merged.limits),
+        stringifyJson(merged.allowedModels),
+        id,
+      ]
     );
     result = merged;
   });

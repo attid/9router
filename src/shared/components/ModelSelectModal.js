@@ -24,6 +24,9 @@ export default function ModelSelectModal({
   onSelect,
   onDeselect,
   selectedModel,
+  selectedModels = [],
+  multiSelect = false,
+  onConfirm,
   activeProviders = [],
   title = "Select Model",
   modelAliases = {},
@@ -45,6 +48,23 @@ export default function ModelSelectModal({
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
+  const [internalSelected, setInternalSelected] = useState(new Set());
+
+  // Sync internal state with prop when modal opens
+  useEffect(() => {
+    if (isOpen && multiSelect) {
+      setInternalSelected(new Set(selectedModels || []));
+    }
+  }, [isOpen, multiSelect, selectedModels]);
+
+  const toggleModel = (modelValue) => {
+    setInternalSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(modelValue)) next.delete(modelValue);
+      else next.add(modelValue);
+      return next;
+    });
+  };
 
   const fetchCombos = async () => {
     try {
@@ -412,11 +432,14 @@ export default function ModelSelectModal({
             </div>
             <div className="flex flex-wrap gap-1.5">
               {filteredCombos.map((combo) => {
-                const isSelected = selectedModel === combo.name;
+                const isSelected = multiSelect ? internalSelected.has(combo.name) : selectedModel === combo.name;
                 return (
                   <button
                     key={combo.id}
-                    onClick={() => handleSelect({ id: combo.name, name: combo.name, value: combo.name })}
+                    onClick={() => multiSelect
+                      ? toggleModel(combo.name)
+                      : handleSelect({ id: combo.name, name: combo.name, value: combo.name })
+                    }
                     className={`
                       px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer flex items-center gap-1
                       ${isSelected
@@ -427,7 +450,12 @@ export default function ModelSelectModal({
                       }
                     `}
                   >
-                    {addedModelValues.includes(combo.name) && (
+                    {multiSelect && (
+                      <span className="material-symbols-outlined text-[12px] mr-0.5">
+                        {internalSelected.has(combo.name) ? "check_box" : "check_box_outline_blank"}
+                      </span>
+                    )}
+                    {!multiSelect && addedModelValues.includes(combo.name) && (
                       <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
                     )}
                     {combo.name}
@@ -460,12 +488,15 @@ export default function ModelSelectModal({
 
             <div className="flex flex-wrap gap-1.5">
               {group.models.map((model) => {
-                const isSelected = selectedModel === model.value;
+                const isSelected = multiSelect ? internalSelected.has(model.value) : selectedModel === model.value;
                 const isPlaceholder = model.isPlaceholder;
                 return (
                   <button
                     key={model.value}
-                    onClick={() => handleSelect(model)}
+                    onClick={() => multiSelect
+                      ? toggleModel(model.value)
+                      : handleSelect(model)
+                    }
                     title={isPlaceholder ? "Select to pre-fill, then edit model ID in the input" : undefined}
                     className={`
                       px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
@@ -480,7 +511,12 @@ export default function ModelSelectModal({
                     `}
                   >
                     <span className="flex items-center gap-1">
-                      {addedModelValues.includes(model.value) && !isPlaceholder && (
+                      {multiSelect && !isPlaceholder && (
+                        <span className="material-symbols-outlined text-[12px] mr-0.5">
+                          {internalSelected.has(model.value) ? "check_box" : "check_box_outline_blank"}
+                        </span>
+                      )}
+                      {!multiSelect && addedModelValues.includes(model.value) && !isPlaceholder && (
                         <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
                       )}
                       {isPlaceholder ? (
@@ -513,6 +549,33 @@ export default function ModelSelectModal({
           </div>
         )}
       </div>
+
+      {multiSelect && (
+        <div className="mt-3 pt-3 border-t border-border flex items-center justify-between">
+          <span className="text-xs text-text-muted">
+            {internalSelected.size} model{internalSelected.size !== 1 ? "s" : ""} selected
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setInternalSelected(new Set());
+              }}
+              className="px-3 py-1.5 text-xs text-text-muted hover:text-text-main transition-colors"
+            >
+              Clear all
+            </button>
+            <button
+              onClick={() => {
+                onConfirm?.([...internalSelected]);
+                onClose();
+              }}
+              className="px-4 py-1.5 bg-primary text-white rounded text-xs font-medium hover:bg-primary-hover transition-colors"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }
@@ -520,9 +583,12 @@ export default function ModelSelectModal({
 ModelSelectModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
-  onSelect: PropTypes.func.isRequired,
+  onSelect: PropTypes.func,
   onDeselect: PropTypes.func,
   selectedModel: PropTypes.string,
+  selectedModels: PropTypes.arrayOf(PropTypes.string),
+  multiSelect: PropTypes.bool,
+  onConfirm: PropTypes.func,
   activeProviders: PropTypes.arrayOf(
     PropTypes.shape({
       provider: PropTypes.string.isRequired,
@@ -534,4 +600,3 @@ ModelSelectModal.propTypes = {
   addedModelValues: PropTypes.arrayOf(PropTypes.string),
   closeOnSelect: PropTypes.bool,
 };
-
