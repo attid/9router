@@ -280,7 +280,7 @@ export async function saveRequestUsage(entry) {
     });
 
     pushToRing(entry);
-    statsEmitter.emit("update");
+    statsEmitter.emit("update", entry);
   } catch (e) {
     console.error("Failed to save usage stats:", e);
   }
@@ -304,6 +304,16 @@ export async function getUsageHistory(filter = {}) {
     connectionId: r.connectionId, apiKey: r.apiKey, endpoint: r.endpoint,
     cost: r.cost, status: r.status, tokens: parseJson(r.tokens, {}),
   }));
+}
+
+export async function getUsageByApiKey(apiKey, since) {
+  const db = await getAdapter();
+  const sinceIso = since instanceof Date ? since.toISOString() : new Date(since).toISOString();
+  const row = db.get(
+    `SELECT COALESCE(SUM(promptTokens + completionTokens), 0) AS total FROM usageHistory WHERE apiKey = ? AND timestamp >= ?`,
+    [apiKey, sinceIso]
+  );
+  return Number(row?.total || 0);
 }
 
 function loadDaysInRange(adapter, maxDays) {

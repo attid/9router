@@ -21,7 +21,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive } = body;
+    const { isActive, limits } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,6 +30,21 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+
+    if (limits !== undefined) {
+      // Validate limits
+      if (limits !== null) {
+        for (const period of ["hourly", "daily", "weekly"]) {
+          if (limits[period] !== undefined && limits[period] !== null) {
+            const val = Number(limits[period]);
+            if (!Number.isInteger(val) || val < 0) {
+              return NextResponse.json({ error: `Invalid ${period} limit: must be a non-negative integer` }, { status: 400 });
+            }
+          }
+        }
+      }
+      updateData.limits = limits;
+    }
 
     const updated = await updateApiKey(id, updateData);
 
