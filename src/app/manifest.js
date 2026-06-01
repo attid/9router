@@ -1,3 +1,4 @@
+import { apiPath } from "@/lib/basePath";
 export default function manifest() {
   return {
     name: '9Router - AI Infrastructure Management',
@@ -10,17 +11,17 @@ export default function manifest() {
     orientation: 'portrait-primary',
     icons: [
       {
-        src: '/icons/icon-192.svg',
+        src: apiPath('/icons/icon-192.svg'),
         sizes: '192x192',
         type: 'image/svg+xml',
       },
       {
-        src: '/icons/icon-512.svg',
+        src: apiPath('/icons/icon-512.svg'),
         sizes: '512x512',
         type: 'image/svg+xml',
       },
       {
-        src: '/icons/icon-512.svg',
+        src: apiPath('/icons/icon-512.svg'),
         sizes: '512x512',
         type: 'image/svg+xml',
         purpose: 'maskable',

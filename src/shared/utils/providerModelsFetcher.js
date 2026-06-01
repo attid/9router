@@ -1,3 +1,4 @@
+import { apiPath } from "@/lib/basePath";
 // Fetch and cache suggested models for providers that expose a public models API
 // Fetches via backend proxy to avoid CORS issues
 
@@ -18,7 +19,7 @@ export async function fetchSuggestedModels(fetcher) {
 
   try {
     const params = new URLSearchParams({ url: fetcher.url, type: fetcher.type });
-    const res = await fetch(`/api/providers/suggested-models?${params}`);
+    const res = await fetch(apiPath(`/api/providers/suggested-models?${params}`));
     if (!res.ok) return [];
     const json = await res.json();
     const data = json.data ?? [];

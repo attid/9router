@@ -13,6 +13,13 @@ RUN --mount=type=cache,target=/root/.npm \
 
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# basePath is baked into the bundle at build time; surface via build arg so
+# `docker build --build-arg BASE_PATH=/9router` produces an image bound to that prefix.
+ARG BASE_PATH=""
+ENV BASE_PATH=${BASE_PATH}
+ENV NEXT_PUBLIC_BASE_PATH=${BASE_PATH}
+
 RUN npm run build
 
 FROM ${NODE_IMAGE} AS runner
@@ -25,6 +32,10 @@ ENV PORT=20128
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATA_DIR=/app/data
+
+ARG BASE_PATH=""
+ENV BASE_PATH=${BASE_PATH}
+ENV NEXT_PUBLIC_BASE_PATH=${BASE_PATH}
 
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/static ./.next/static

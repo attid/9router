@@ -7,6 +7,7 @@ import Input from "@/shared/components/Input";
 import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { apiPath } from "@/lib/basePath";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -63,7 +64,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch(`/api/providers/${connection.id}/test`, { method: "POST" });
+      const res = await fetch(apiPath(`/api/providers/${connection.id}/test`), { method: "POST" });
       const data = await res.json();
       setTestResult(data.valid ? "success" : "failed");
     } catch {
@@ -78,7 +79,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     setValidating(true);
     setValidationResult(null);
     try {
-      const res = await fetch("/api/providers/validate", {
+      const res = await fetch(apiPath("/api/providers/validate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -112,7 +113,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           try {
             setValidating(true);
             setValidationResult(null);
-            const res = await fetch("/api/providers/validate", {
+            const res = await fetch(apiPath("/api/providers/validate"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({

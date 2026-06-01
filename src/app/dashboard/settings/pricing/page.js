@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Card from "@/shared/components/Card";
 import PricingModal from "@/shared/components/PricingModal";
+import { apiPath } from "@/lib/basePath";
 
 export default function PricingSettingsPage() {
   const router = useRouter();
@@ -18,7 +19,7 @@ export default function PricingSettingsPage() {
   const loadPricing = async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/pricing");
+      const response = await fetch(apiPath("/api/pricing"));
       if (response.ok) {
         const data = await response.json();
         setCurrentPricing(data);

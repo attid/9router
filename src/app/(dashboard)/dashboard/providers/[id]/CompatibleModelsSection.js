@@ -3,6 +3,7 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
+import { apiPath } from "@/lib/basePath";
 function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
@@ -81,7 +82,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     if (testingModelId) return;
     setTestingModelId(modelId);
     try {
-      const res = await fetch("/api/models/test", {
+      const res = await fetch(apiPath("/api/models/test"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}` }),
@@ -148,7 +149,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
 
     setImporting(true);
     try {
-      const res = await fetch(`/api/providers/${activeConnection.id}/models`);
+      const res = await fetch(apiPath(`/api/providers/${activeConnection.id}/models`));
       const data = await res.json();
       if (!res.ok) {
         alert(data.error || "Failed to import models");

@@ -10,6 +10,7 @@ import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
+import { apiPath } from "@/lib/basePath";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
 const VISIBLE_MEDIA_KINDS = ["embedding", "image", "tts", "stt"];
@@ -53,7 +54,7 @@ export default function Sidebar({ onClose }) {
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
 
   useEffect(() => {
-    fetch("/api/settings")
+    fetch(apiPath("/api/settings"))
       .then(res => res.json())
       .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
       .catch(() => {});
@@ -61,7 +62,7 @@ export default function Sidebar({ onClose }) {
 
   // Lazy check for new npm version on mount
   useEffect(() => {
-    fetch("/api/version")
+    fetch(apiPath("/api/version"))
       .then(res => res.json())
       .then(data => { if (data.hasUpdate) setUpdateInfo(data); })
       .catch(() => {});
@@ -91,7 +92,7 @@ export default function Sidebar({ onClose }) {
       setShutdownCountdown(remaining);
       if (remaining <= 0) {
         clearInterval(timer);
-        fetch("/api/version/shutdown", { method: "POST" }).catch(() => {});
+        fetch(apiPath("/api/version/shutdown"), { method: "POST" }).catch(() => {});
         setIsDisconnected(true);
       }
     }, 1000);
@@ -109,7 +110,7 @@ export default function Sidebar({ onClose }) {
   const handleShutdown = async () => {
     setIsShuttingDown(true);
     try {
-      await fetch("/api/version/shutdown", { method: "POST" });
+      await fetch(apiPath("/api/version/shutdown"), { method: "POST" });
     } catch (e) {
       // Expected to fail as server shuts down; ignore error
     }

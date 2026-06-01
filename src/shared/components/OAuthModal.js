@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { apiPath } from "@/lib/basePath";
 
 /**
  * OAuth Modal Component
@@ -43,7 +44,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const exchangeTokens = useCallback(async (code, state) => {
     if (!authData) return;
     try {
-      const res = await fetch(`/api/oauth/${provider}/exchange`, {
+      const res = await fetch(apiPath(`/api/oauth/${provider}/exchange`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -69,7 +70,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const completeXaiManualCode = useCallback(async (code) => {
     if (!authData?.state) return;
     try {
-      const res = await fetch("/api/oauth/xai/manual-code", {
+      const res = await fetch(apiPath("/api/oauth/xai/manual-code"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code, state: authData.state }),
@@ -113,7 +114,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       }
 
       try {
-        const res = await fetch(`/api/oauth/${provider}/poll`, {
+        const res = await fetch(apiPath(`/api/oauth/${provider}/poll`), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ deviceCode, codeVerifier, extraData }),
@@ -161,7 +162,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         setIsDeviceCode(true);
         setStep("waiting");
 
-        const deviceCodeUrl = new URL(`/api/oauth/${provider}/device-code`, window.location.origin);
+        const deviceCodeUrl = new URL(apiPath(`/api/oauth/${provider}/device-code`), window.location.origin);
         if (provider === "kiro" && idcConfig?.startUrl) {
           deviceCodeUrl.searchParams.set("start_url", idcConfig.startUrl);
           if (idcConfig.region) {
@@ -223,7 +224,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       }
 
       // Build authorize URL first to get codeVerifier/state for codex server-side mode
-      const authorizeUrl = new URL(`/api/oauth/${provider}/authorize`, window.location.origin);
+      const authorizeUrl = new URL(apiPath(`/api/oauth/${provider}/authorize`), window.location.origin);
       authorizeUrl.searchParams.set("redirect_uri", redirectUri);
       if (oauthMeta) {
         Object.entries(oauthMeta).forEach(([k, v]) => { if (v) authorizeUrl.searchParams.set(k, v); });
@@ -237,7 +238,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       let codexServerSide = false;
       if (provider === "codex") {
         try {
-          const proxyUrl = new URL(`/api/oauth/codex/start-proxy`, window.location.origin);
+          const proxyUrl = new URL(apiPath("/api/oauth/codex/start-proxy"), window.location.origin);
           proxyUrl.searchParams.set("app_port", appPort);
           proxyUrl.searchParams.set("state", data.state);
           proxyUrl.searchParams.set("code_verifier", data.codeVerifier);
@@ -256,7 +257,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       let xaiServerSide = false;
       if (provider === "xai") {
         try {
-          const proxyUrl = new URL(`/api/oauth/xai/start-proxy`, window.location.origin);
+          const proxyUrl = new URL(apiPath("/api/oauth/xai/start-proxy"), window.location.origin);
           proxyUrl.searchParams.set("app_port", appPort);
           proxyUrl.searchParams.set("state", data.state);
           proxyUrl.searchParams.set("code_verifier", data.codeVerifier);
@@ -322,9 +323,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       // Abort polling and cleanup proxy when modal closes
       pollingAbortRef.current = true;
       if (provider === "codex") {
-        fetch("/api/oauth/codex/stop-proxy").catch(() => {});
+        fetch(apiPath("/api/oauth/codex/stop-proxy")).catch(() => {});
       } else if (provider === "xai") {
-        fetch("/api/oauth/xai/stop-proxy").catch(() => {});
+        fetch(apiPath("/api/oauth/xai/stop-proxy")).catch(() => {});
       }
     }
   }, [isOpen, provider, startOAuthFlow]);
@@ -343,7 +344,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       if (cancelled || callbackProcessedRef.current) return;
       attempts += 1;
       try {
-          const res = await fetch(`/api/oauth/${pollProvider}/poll-status?state=${encodeURIComponent(authData.state)}`);
+          const res = await fetch(apiPath(`/api/oauth/${pollProvider}/poll-status?state=${encodeURIComponent(authData.state)}`));
         const data = await res.json();
         if (cancelled || callbackProcessedRef.current) return;
         if (data.status === "done") {
@@ -495,9 +496,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // Clear session on modal close + cleanup proxy
   const handleClose = useCallback(() => {
     if (provider === "codex") {
-      fetch("/api/oauth/codex/stop-proxy").catch(() => {});
+      fetch(apiPath("/api/oauth/codex/stop-proxy")).catch(() => {});
     } else if (provider === "xai") {
-      fetch("/api/oauth/xai/stop-proxy").catch(() => {});
+      fetch(apiPath("/api/oauth/xai/stop-proxy")).catch(() => {});
     }
     onClose();
   }, [onClose, provider]);

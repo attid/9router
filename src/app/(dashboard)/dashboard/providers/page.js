@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
+import { apiPath } from "@/lib/basePath";
 import {
   Card,
   CardSkeleton,
@@ -144,8 +145,8 @@ export default function ProvidersPage() {
     const fetchData = async () => {
       try {
         const [connectionsRes, nodesRes] = await Promise.all([
-          fetch("/api/providers"),
-          fetch("/api/provider-nodes"),
+          fetch(apiPath("/api/providers")),
+          fetch(apiPath("/api/provider-nodes")),
         ]);
         const connectionsData = await connectionsRes.json();
         const nodesData = await nodesRes.json();
@@ -218,7 +219,7 @@ export default function ProvidersPage() {
     );
     await Promise.allSettled(
       providerConns.map((c) =>
-        fetch(`/api/providers/${c.id}`, {
+        fetch(apiPath(`/api/providers/${c.id}`), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ isActive: newActive }),
@@ -232,7 +233,7 @@ export default function ProvidersPage() {
     setTestingMode(mode === "provider" ? providerId : mode);
     setTestResults(null);
     try {
-      const res = await fetch("/api/providers/test-batch", {
+      const res = await fetch(apiPath("/api/providers/test-batch"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode, providerId }),
@@ -624,7 +625,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
               }}
             >
               <ProviderIcon
-                src={`/providers/${provider.id}.png`}
+                src={apiPath(`/providers/${provider.id}.png`)}
                 alt={provider.name}
                 size={30}
                 className="object-contain rounded-lg max-w-[32px] max-h-[32px]"
@@ -731,10 +732,10 @@ function ApiKeyProviderCard({
   const getIconPath = () => {
     if (isCompatible)
       return provider.apiType === "responses"
-        ? "/providers/oai-r.png"
-        : "/providers/oai-cc.png";
-    if (isAnthropicCompatible) return "/providers/anthropic-m.png";
-    return `/providers/${provider.id}.png`;
+        ? apiPath("/providers/oai-r.png")
+        : apiPath("/providers/oai-cc.png");
+    if (isAnthropicCompatible) return apiPath("/providers/anthropic-m.png");
+    return apiPath(`/providers/${provider.id}.png`);
   };
 
   return (
@@ -873,7 +874,7 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
       return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/provider-nodes", {
+      const res = await fetch(apiPath("/api/provider-nodes"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -906,7 +907,7 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
   const handleValidate = async () => {
     setValidating(true);
     try {
-      const res = await fetch("/api/provider-nodes/validate", {
+      const res = await fetch(apiPath("/api/provider-nodes/validate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1065,7 +1066,7 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
       return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/provider-nodes", {
+      const res = await fetch(apiPath("/api/provider-nodes"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1096,7 +1097,7 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
   const handleValidate = async () => {
     setValidating(true);
     try {
-      const res = await fetch("/api/provider-nodes/validate", {
+      const res = await fetch(apiPath("/api/provider-nodes/validate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

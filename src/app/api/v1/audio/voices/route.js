@@ -1,12 +1,13 @@
 import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { apiPath } from "@/lib/basePath";
 
 // Provider → internal voices API. Edge/local-device share the generic endpoint.
 const PROVIDER_API = {
-  elevenlabs: (origin) => `${origin}/api/media-providers/tts/elevenlabs/voices`,
-  deepgram: (origin) => `${origin}/api/media-providers/tts/deepgram/voices`,
-  inworld: (origin) => `${origin}/api/media-providers/tts/inworld/voices`,
-  "edge-tts": (origin) => `${origin}/api/media-providers/tts/voices?provider=edge-tts`,
-  "local-device": (origin) => `${origin}/api/media-providers/tts/voices?provider=local-device`,
+  elevenlabs: (origin) => `${origin}${apiPath("/api/media-providers/tts/elevenlabs/voices")}`,
+  deepgram: (origin) => `${origin}${apiPath("/api/media-providers/tts/deepgram/voices")}`,
+  inworld: (origin) => `${origin}${apiPath("/api/media-providers/tts/inworld/voices")}`,
+  "edge-tts": (origin) => `${origin}${apiPath("/api/media-providers/tts/voices?provider=edge-tts")}`,
+  "local-device": (origin) => `${origin}${apiPath("/api/media-providers/tts/voices?provider=local-device")}`,
 };
 
 export async function OPTIONS() {

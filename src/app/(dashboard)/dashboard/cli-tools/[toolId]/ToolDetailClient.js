@@ -5,6 +5,7 @@ import Link from "next/link";
 import { CardSkeleton } from "@/shared/components";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import { apiPath } from "@/lib/basePath";
 import {
   ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard,
   HermesToolCard, DefaultToolCard, OpenCodeToolCard, CoworkToolCard,
@@ -31,10 +32,10 @@ export default function ToolDetailClient({ toolId, machineId }) {
     (async () => {
       try {
         const [provRes, settingsRes, tunnelRes, keysRes] = await Promise.all([
-          fetch("/api/providers"),
-          fetch("/api/settings"),
-          fetch("/api/tunnel/status"),
-          fetch("/api/keys"),
+          fetch(apiPath("/api/providers")),
+          fetch(apiPath("/api/settings")),
+          fetch(apiPath("/api/tunnel/status")),
+          fetch(apiPath("/api/keys")),
         ]);
         if (!mounted) return;
         if (provRes.ok) {

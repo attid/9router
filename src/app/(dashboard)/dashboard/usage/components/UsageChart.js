@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import PropTypes from "prop-types";
+import { apiPath } from "@/lib/basePath";
 import {
   AreaChart,
   Area,
@@ -30,7 +31,7 @@ export default function UsageChart({ period = "7d" }) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/usage/chart?period=${period}`);
+      const res = await fetch(apiPath(`/api/usage/chart?period=${period}`));
       if (res.ok) {
         const json = await res.json();
         setData(json);

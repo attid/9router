@@ -4,6 +4,7 @@ import { ANTIGRAVITY_CONFIG, getOAuthClientMetadata } from "../constants/oauth.j
 import { getServerCredentials } from "../config/index.js";
 import { startLocalServer } from "../utils/server.js";
 import { spinner as createSpinner } from "../utils/ui.js";
+import { absoluteApiUrl } from "../../basePath.js";
 
 /**
  * Antigravity OAuth Service
@@ -198,7 +199,7 @@ export class AntigravityService {
   async saveTokens(tokens, userInfo, projectId) {
     const { server, token, userId } = getServerCredentials();
 
-    const response = await fetch(`${server}/api/cli/providers/antigravity`, {
+    const response = await fetch(absoluteApiUrl(server, "/api/cli/providers/antigravity"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -318,4 +319,3 @@ export class AntigravityService {
     }
   }
 }
-

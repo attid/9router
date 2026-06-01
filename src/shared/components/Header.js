@@ -12,6 +12,7 @@ import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS } from "@/shared/constants/providers";
 import { translate } from "@/i18n/runtime";
+import { apiPath } from "@/lib/basePath";
 
 const getPageInfo = (pathname) => {
   if (!pathname) return { title: "", description: "", breadcrumbs: [] };
@@ -29,7 +30,7 @@ const getPageInfo = (pathname) => {
       breadcrumbs: [
         { label: "Media Providers", href: `/dashboard/media-providers/${kindId}` },
         { label: kindConfig?.label || kindId, href: `/dashboard/media-providers/${kindId}` },
-        { label: provider?.name || providerId, image: `/providers/${providerId}.png` },
+        { label: provider?.name || providerId, image: apiPath(`/providers/${providerId}.png`) },
       ],
     };
   }
@@ -61,7 +62,7 @@ const getPageInfo = (pathname) => {
           { label: "Providers", href: "/dashboard/providers" },
           {
             label: providerInfo.name,
-            image: `/providers/${providerInfo.id}.png`,
+            image: apiPath(`/providers/${providerInfo.id}.png`),
           },
         ],
       };
@@ -186,7 +187,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
 
     async function loadAuthStatus() {
       try {
-        const res = await fetch("/api/auth/status", { cache: "no-store" });
+        const res = await fetch(apiPath("/api/auth/status"), { cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
         if (!cancelled) {
@@ -209,7 +210,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
 
   const handleLogout = async () => {
     try {
-      const res = await fetch("/api/auth/logout", { method: "POST" });
+      const res = await fetch(apiPath("/api/auth/logout"), { method: "POST" });
       if (res.ok) {
         router.push("/login");
         router.refresh();

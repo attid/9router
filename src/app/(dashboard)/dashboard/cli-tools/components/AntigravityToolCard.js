@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card, Button, Badge, Modal, Input, ModelSelectModal } from "@/shared/components";
 import Image from "next/image";
+import { apiPath } from "@/lib/basePath";
 
 export default function AntigravityToolCard({
   tool,
@@ -51,7 +52,7 @@ export default function AntigravityToolCard({
 
   const loadSavedMappings = async () => {
     try {
-      const res = await fetch("/api/cli-tools/antigravity-mitm/alias?tool=antigravity");
+      const res = await fetch(apiPath("/api/cli-tools/antigravity-mitm/alias?tool=antigravity"));
       if (res.ok) {
         const data = await res.json();
         const aliases = data.aliases || {};
@@ -67,7 +68,7 @@ export default function AntigravityToolCard({
 
   const fetchModelAliases = async () => {
     try {
-      const res = await fetch("/api/models/alias");
+      const res = await fetch(apiPath("/api/models/alias"));
       const data = await res.json();
       if (res.ok) setModelAliases(data.aliases || {});
     } catch (error) {
@@ -77,7 +78,7 @@ export default function AntigravityToolCard({
 
   const fetchStatus = async () => {
     try {
-      const res = await fetch("/api/cli-tools/antigravity-mitm");
+      const res = await fetch(apiPath("/api/cli-tools/antigravity-mitm"));
       if (res.ok) {
         const data = await res.json();
         setStatus(data);
@@ -120,7 +121,7 @@ export default function AntigravityToolCard({
         || (apiKeys?.length > 0 ? apiKeys[0].key : null)
         || (!cloudEnabled ? "sk_9router" : null);
 
-      const res = await fetch("/api/cli-tools/antigravity-mitm", {
+      const res = await fetch(apiPath("/api/cli-tools/antigravity-mitm"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ apiKey: keyToUse, sudoPassword: password }),
@@ -149,7 +150,7 @@ export default function AntigravityToolCard({
     setLoading(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/cli-tools/antigravity-mitm", {
+      const res = await fetch(apiPath("/api/cli-tools/antigravity-mitm"), {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sudoPassword: password }),
@@ -209,7 +210,7 @@ export default function AntigravityToolCard({
     setMessage(null);
 
     try {
-      const res = await fetch("/api/cli-tools/antigravity-mitm/alias", {
+      const res = await fetch(apiPath("/api/cli-tools/antigravity-mitm/alias"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tool: "antigravity", mappings: modelMappings }),
@@ -236,7 +237,7 @@ export default function AntigravityToolCard({
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
             <Image
-              src="/providers/antigravity.png"
+              src={apiPath("/providers/antigravity.png")}
               alt={tool.name}
               width={32}
               height={32}

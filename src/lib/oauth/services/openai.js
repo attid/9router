@@ -2,6 +2,7 @@ import { OAuthService } from "./oauth.js";
 import { OPENAI_CONFIG } from "../constants/oauth.js";
 import { getServerCredentials } from "../config/index.js";
 import { spinner as createSpinner } from "../utils/ui.js";
+import { absoluteApiUrl } from "../../basePath.js";
 
 /**
  * OpenAI OAuth Service (Native)
@@ -63,7 +64,7 @@ export class OpenAIService extends OAuthService {
   async saveTokens(tokens) {
     const { server, token, userId } = getServerCredentials();
 
-    const response = await fetch(`${server}/api/cli/providers/openai`, {
+    const response = await fetch(absoluteApiUrl(server, "/api/cli/providers/openai"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -120,4 +121,3 @@ export class OpenAIService extends OAuthService {
     }
   }
 }
-

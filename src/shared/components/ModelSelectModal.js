@@ -6,6 +6,7 @@ import Modal from "./Modal";
 import ProviderIcon from "./ProviderIcon";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
+import { apiPath } from "@/lib/basePath";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -68,7 +69,7 @@ export default function ModelSelectModal({
 
   const fetchCombos = async () => {
     try {
-      const res = await fetch("/api/combos");
+      const res = await fetch(apiPath("/api/combos"));
       if (!res.ok) throw new Error(`Failed to fetch combos: ${res.status}`);
       const data = await res.json();
       setCombos(data.combos || []);
@@ -84,7 +85,7 @@ export default function ModelSelectModal({
 
   const fetchProviderNodes = async () => {
     try {
-      const res = await fetch("/api/provider-nodes");
+      const res = await fetch(apiPath("/api/provider-nodes"));
       if (!res.ok) throw new Error(`Failed to fetch provider nodes: ${res.status}`);
       const data = await res.json();
       setProviderNodes(data.nodes || []);
@@ -100,7 +101,7 @@ export default function ModelSelectModal({
 
   const fetchCustomModels = async () => {
     try {
-      const res = await fetch("/api/models/custom");
+      const res = await fetch(apiPath("/api/models/custom"));
       if (!res.ok) throw new Error(`Failed to fetch custom models: ${res.status}`);
       const data = await res.json();
       setCustomModels(data.models || []);
@@ -116,7 +117,7 @@ export default function ModelSelectModal({
 
   const fetchDisabledModels = async () => {
     try {
-      const res = await fetch("/api/models/disabled");
+      const res = await fetch(apiPath("/api/models/disabled"));
       if (!res.ok) throw new Error(`Failed to fetch disabled models: ${res.status}`);
       const data = await res.json();
       setDisabledModels(data.disabled || {});
@@ -472,7 +473,7 @@ export default function ModelSelectModal({
             {/* Provider header */}
             <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
               <ProviderIcon
-                src={`/providers/${providerId}.png`}
+                src={apiPath(`/providers/${providerId}.png`)}
                 alt={group.name}
                 size={14}
                 fallbackText={(group.name || providerId).slice(0, 2).toUpperCase()}

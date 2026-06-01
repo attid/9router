@@ -5,6 +5,7 @@ import Modal from "./Modal";
 import Input from "./Input";
 import Button from "./Button";
 import ModelSelectModal from "./ModelSelectModal";
+import { apiPath } from "@/lib/basePath";
 
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
@@ -64,7 +65,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
 
   useEffect(() => {
     if (!isOpen) return;
-    fetch("/api/models/alias").then((r) => r.ok ? r.json() : null).then((d) => d && setModelAliases(d.aliases || {})).catch(() => {});
+    fetch(apiPath("/api/models/alias")).then((r) => r.ok ? r.json() : null).then((d) => d && setModelAliases(d.aliases || {})).catch(() => {});
   }, [isOpen]);
 
   const validateName = (value) => {

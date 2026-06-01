@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { dashboardPath } from "@/lib/basePath";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -42,27 +43,6 @@ const ALWAYS_PROTECTED = [
   "/api/version/update",
   "/api/oauth/cursor/auto-import",
   "/api/oauth/kiro/auto-import",
-];
-
-// Require auth, but allow through if requireLogin is disabled
-const PROTECTED_API_PATHS = [
-  "/api/settings",
-  "/api/keys",
-  "/api/providers",
-  "/api/provider-nodes",
-  "/api/proxy-pools",
-  "/api/combos",
-  "/api/models",
-  "/api/usage",
-  "/api/oauth",
-  "/api/cloud",
-  "/api/media-providers",
-  "/api/pricing",
-  "/api/tags",
-  "/api/cli-tools",
-  "/api/mcp",
-  "/api/translator",
-  "/api/tunnel",
 ];
 
 // Routes that spawn child processes or read host secrets — restrict to localhost.
@@ -154,6 +134,12 @@ function isPublicApi(pathname) {
   return PUBLIC_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+function isPublicApiRequest(request) {
+  const { pathname } = request.nextUrl;
+  if (request.method === "GET" && pathname === "/api/settings") return true;
+  return isPublicApi(pathname);
+}
+
 export const __test__ = {
   isLocalRequest,
   isPublicLlmApi,
@@ -186,7 +172,7 @@ export async function proxy(request) {
 
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
-    if (isPublicApi(pathname)) return NextResponse.next();
+    if (isPublicApiRequest(request)) return NextResponse.next();
     if (await hasValidCliToken(request) || await isAuthenticated(request))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -209,7 +195,7 @@ export async function proxy(request) {
           const tunnelHost = settings.tunnelUrl ? new URL(settings.tunnelUrl).hostname.toLowerCase() : "";
           const tailscaleHost = settings.tailscaleUrl ? new URL(settings.tailscaleUrl).hostname.toLowerCase() : "";
           if ((tunnelHost && host === tunnelHost) || (tailscaleHost && host === tailscaleHost)) {
-            return NextResponse.redirect(new URL("/login", request.url));
+            return NextResponse.redirect(new URL(dashboardPath("/login"), request.url));
           }
         }
       }
@@ -225,18 +211,21 @@ export async function proxy(request) {
     if (token) {
       if (await verifyDashboardAuthToken(token)) {
         return NextResponse.next();
-      } else {
-        return NextResponse.redirect(new URL("/login", request.url));
       }
+      return NextResponse.redirect(new URL(dashboardPath("/login"), request.url));
     }
 
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(new URL(dashboardPath("/login"), request.url));
   }
 
   // Redirect / to /dashboard if logged in, or /dashboard if it's the root
   if (pathname === "/") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return NextResponse.redirect(new URL(dashboardPath("/dashboard"), request.url));
   }
 
   return NextResponse.next();
 }
+
+export const config = {
+  matcher: ["/", "/api/:path*", "/dashboard/:path*"],
+};

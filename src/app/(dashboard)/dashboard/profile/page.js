@@ -5,6 +5,7 @@ import { Card, Button, Toggle, Input } from "@/shared/components";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
+import { apiPath } from "@/lib/basePath";
 
 export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
@@ -40,7 +41,7 @@ export default function ProfilePage() {
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/settings")
+    fetch(apiPath("/api/settings"))
       .then((res) => res.json())
       .then((data) => {
         setSettings(data);
@@ -68,7 +69,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setOidcRedirectUri(`${window.location.origin}/api/auth/oidc/callback`);
+      setOidcRedirectUri(`${window.location.origin}${apiPath("/api/auth/oidc/callback")}`);
     }
   }, []);
 
@@ -79,7 +80,7 @@ export default function ProfilePage() {
     setProxyStatus({ type: "", message: "" });
 
     try {
-      const res = await fetch("/api/settings", {
+      const res = await fetch(apiPath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -115,7 +116,7 @@ export default function ProfilePage() {
     setProxyStatus({ type: "", message: "" });
 
     try {
-      const res = await fetch("/api/settings/proxy-test", {
+      const res = await fetch(apiPath("/api/settings/proxy-test"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ proxyUrl }),
@@ -145,7 +146,7 @@ export default function ProfilePage() {
     setProxyStatus({ type: "", message: "" });
 
     try {
-      const res = await fetch("/api/settings", {
+      const res = await fetch(apiPath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ outboundProxyEnabled }),
@@ -180,7 +181,7 @@ export default function ProfilePage() {
     setPassStatus({ type: "", message: "" });
 
     try {
-      const res = await fetch("/api/settings", {
+      const res = await fetch(apiPath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -206,7 +207,7 @@ export default function ProfilePage() {
 
   const updateFallbackStrategy = async (strategy) => {
     try {
-      const res = await fetch("/api/settings", {
+      const res = await fetch(apiPath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fallbackStrategy: strategy }),
@@ -221,7 +222,7 @@ export default function ProfilePage() {
 
   const updateComboStrategy = async (strategy) => {
     try {
-      const res = await fetch("/api/settings", {
+      const res = await fetch(apiPath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ comboStrategy: strategy }),
@@ -239,7 +240,7 @@ export default function ProfilePage() {
     if (isNaN(numLimit) || numLimit < 1) return;
 
     try {
-      const res = await fetch("/api/settings", {
+      const res = await fetch(apiPath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stickyRoundRobinLimit: numLimit }),
@@ -257,7 +258,7 @@ export default function ProfilePage() {
     if (isNaN(numLimit) || numLimit < 1) return;
 
     try {
-      const res = await fetch("/api/settings", {
+      const res = await fetch(apiPath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ comboStickyRoundRobinLimit: numLimit }),
@@ -272,7 +273,7 @@ export default function ProfilePage() {
 
   const updateRequireLogin = async (requireLogin) => {
     try {
-      const res = await fetch("/api/settings", {
+      const res = await fetch(apiPath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ requireLogin }),
@@ -317,7 +318,7 @@ export default function ProfilePage() {
         payload.oidcClientSecret = secret;
       }
 
-      const res = await fetch("/api/settings", {
+      const res = await fetch(apiPath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -369,7 +370,7 @@ export default function ProfilePage() {
     setOidcTestStatus({ type: "", message: "" });
 
     try {
-      const saveRes = await fetch("/api/settings", {
+      const saveRes = await fetch(apiPath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -391,7 +392,7 @@ export default function ProfilePage() {
         return;
       }
 
-      const res = await fetch("/api/auth/oidc/test", {
+      const res = await fetch(apiPath("/api/auth/oidc/test"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -424,7 +425,7 @@ export default function ProfilePage() {
 
   const updateObservabilityEnabled = async (enabled) => {
     try {
-      const res = await fetch("/api/settings", {
+      const res = await fetch(apiPath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enableObservability: enabled }),
@@ -439,7 +440,7 @@ export default function ProfilePage() {
 
   const reloadSettings = async () => {
     try {
-      const res = await fetch("/api/settings");
+      const res = await fetch(apiPath("/api/settings"));
       if (!res.ok) return;
       const data = await res.json();
       setSettings(data);
@@ -452,7 +453,7 @@ export default function ProfilePage() {
     setDbLoading(true);
     setDbStatus({ type: "", message: "" });
     try {
-      const res = await fetch("/api/settings/database");
+      const res = await fetch(apiPath("/api/settings/database"));
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to export database");
@@ -490,7 +491,7 @@ export default function ProfilePage() {
       const raw = await file.text();
       const payload = JSON.parse(raw);
 
-      const res = await fetch("/api/settings/database", {
+      const res = await fetch(apiPath("/api/settings/database"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

@@ -8,6 +8,7 @@ import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifi
 import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { apiPath } from "@/lib/basePath";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -29,9 +30,9 @@ export default function CombosPage() {
   const fetchData = async () => {
     try {
       const [combosRes, providersRes, settingsRes] = await Promise.all([
-        fetch("/api/combos"),
-        fetch("/api/providers"),
-        fetch("/api/settings"),
+        fetch(apiPath("/api/combos")),
+        fetch(apiPath("/api/providers")),
+        fetch(apiPath("/api/settings")),
       ]);
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
@@ -52,7 +53,7 @@ export default function CombosPage() {
 
   const handleCreate = async (data) => {
     try {
-      const res = await fetch("/api/combos", {
+      const res = await fetch(apiPath("/api/combos"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -71,7 +72,7 @@ export default function CombosPage() {
 
   const handleUpdate = async (id, data) => {
     try {
-      const res = await fetch(`/api/combos/${id}`, {
+      const res = await fetch(apiPath(`/api/combos/${id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -95,7 +96,7 @@ export default function CombosPage() {
       onConfirm: async () => {
         setConfirmState(null);
         try {
-          const res = await fetch(`/api/combos/${id}`, { method: "DELETE" });
+          const res = await fetch(apiPath(`/api/combos/${id}`), { method: "DELETE" });
           if (res.ok) {
             setCombos(combos.filter(c => c.id !== id));
           }
@@ -115,7 +116,7 @@ export default function CombosPage() {
         delete updated[comboName];
       }
       
-      await fetch("/api/settings", {
+      await fetch(apiPath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ comboStrategies: updated }),
@@ -445,7 +446,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
 
   const fetchModalData = async () => {
     try {
-      const aliasesRes = await fetch("/api/models/alias");
+      const aliasesRes = await fetch(apiPath("/api/models/alias"));
       if (!aliasesRes.ok) return;
       const aliasesData = await aliasesRes.json();
       setModelAliases(aliasesData.aliases || {});

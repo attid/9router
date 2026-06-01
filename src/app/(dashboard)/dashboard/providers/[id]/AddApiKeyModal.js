@@ -4,6 +4,7 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { apiPath } from "@/lib/basePath";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
@@ -69,7 +70,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const handleValidate = async () => {
     setValidating(true);
     try {
-      const res = await fetch("/api/providers/validate", {
+      const res = await fetch(apiPath("/api/providers/validate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData() }),
@@ -98,7 +99,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       try {
         setValidating(true);
         setValidationResult(null);
-        const res = await fetch("/api/providers/validate", {
+        const res = await fetch(apiPath("/api/providers/validate"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData() }),
@@ -139,7 +140,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       const baseName = parts.length >= 2 ? parts[0].trim() : "Key";
       const name = `${baseName} ${i + 1}`;
       try {
-        const res = await fetch("/api/providers", {
+        const res = await fetch(apiPath("/api/providers"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ provider, apiKey, name, priority: 1, testStatus: "unknown" }),

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
+import { apiPath } from "@/lib/basePath";
 
 export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic }) {
   const [formData, setFormData] = useState({
@@ -54,7 +55,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
   const handleValidate = async () => {
     setValidating(true);
     try {
-      const res = await fetch("/api/provider-nodes/validate", {
+      const res = await fetch(apiPath("/api/provider-nodes/validate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

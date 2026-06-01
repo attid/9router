@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
+import { apiPath } from "@/lib/basePath";
 
 /**
  * Kiro Auth Method Selection Modal
@@ -28,7 +29,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
       setAutoDetected(false);
 
       try {
-        const res = await fetch("/api/oauth/kiro/auto-import");
+        const res = await fetch(apiPath("/api/oauth/kiro/auto-import"));
         const data = await res.json();
 
         if (data.found) {
@@ -67,7 +68,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
     setError(null);
 
     try {
-      const res = await fetch("/api/oauth/kiro/import", {
+      const res = await fetch(apiPath("/api/oauth/kiro/import"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken: refreshToken.trim() }),
