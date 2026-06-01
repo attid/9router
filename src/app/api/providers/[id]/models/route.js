@@ -6,6 +6,7 @@ import { refreshGoogleToken, updateProviderCredentials } from "@/sse/services/to
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
+import { fetchKimiCodingModels } from "@/lib/kimi/models.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -152,6 +153,18 @@ const PROVIDER_MODELS_CONFIG = {
     authHeader: "Authorization",
     authPrefix: "Bearer ",
     parseResponse: parseCodexModels
+  },
+  "kimi-coding": {
+    customResolver: async (connection) => {
+      try {
+        return { models: await fetchKimiCodingModels(connection) };
+      } catch (error) {
+        return {
+          error: error.message || "Failed to fetch models",
+          status: error.status || 500,
+        };
+      }
+    }
   },
   antigravity: {
     url: "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:models",

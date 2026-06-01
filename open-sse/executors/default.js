@@ -5,15 +5,20 @@ import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
+import { applyKimiRequestFields } from "../utils/kimiRequest.js";
 
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
-  transformRequest(model, body) {
+  transformRequest(model, body, stream, credentials) {
     const transformed = this.applyJsonSchemaFallback(body);
-    return injectReasoningContent({ provider: this.provider, model, body: transformed });
+    const injected = injectReasoningContent({ provider: this.provider, model, body: transformed });
+    if (this.provider === "kimi-coding") {
+      return applyKimiRequestFields(injected, credentials?.connectionId);
+    }
+    return injected;
   }
 
   // Fallback json_schema → json_object for openai-compatible providers without native Structured Output.
@@ -54,8 +59,6 @@ export class DefaultExecutor extends BaseExecutor {
       case "kimi":
       case "minimax":
       case "minimax-cn":
-        return `${this.config.baseUrl}?beta=true`;
-      case "kimi-coding":
         return `${this.config.baseUrl}?beta=true`;
       case "gemini":
         return `${this.config.baseUrl}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
@@ -294,18 +297,40 @@ export class DefaultExecutor extends BaseExecutor {
 
   async refreshKimiCoding(refreshToken, proxyOptions = null) {
     const kimiHeaders = buildKimiHeaders();
-    const response = await proxyAwareFetch("https://auth.kimi.com/api/oauth/token", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "application/json",
-        ...kimiHeaders
-      },
-      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: "17e5f671-d194-4dfb-9706-5516cb48c098" })
-    }, proxyOptions);
-    if (!response.ok) return null;
-    const tokens = await response.json();
-    return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
+    const requestBody = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: "17e5f671-d194-4dfb-9706-5516cb48c098"
+    });
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const response = await proxyAwareFetch("https://auth.kimi.com/api/oauth/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Accept": "application/json",
+          ...kimiHeaders
+        },
+        body: requestBody
+      }, proxyOptions);
+
+      if (response.ok) {
+        const tokens = await response.json();
+        return {
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token || refreshToken,
+          expiresIn: tokens.expires_in
+        };
+      }
+
+      if (![429, 500, 502, 503, 504].includes(response.status) || attempt === 2) {
+        return null;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 1000));
+    }
+
+    return null;
   }
 
   async refreshKilocode(refreshToken, proxyOptions = null) {

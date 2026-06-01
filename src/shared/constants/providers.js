@@ -39,6 +39,10 @@ export const THINKING_CONFIG = {
   effort: {
     options: ["auto", "none", "low", "medium", "high"],
     defaultMode: "auto"
+  },
+  kimi: {
+    options: ["auto", "off", "low", "medium", "high"],
+    defaultMode: "auto"
   }
 };
 
@@ -61,7 +65,7 @@ export const OAUTH_PROVIDERS = {
   github: { id: "github", alias: "gh", name: "GitHub Copilot", icon: "code", color: "#333333", deprecated: true, deprecationNotice: RISK_NOTICE, serviceKinds: ["llm", "embedding"], embeddingConfig: { baseUrl: "https://models.github.ai/inference/embeddings", authType: "apikey", authHeader: "bearer", models: [{ id: "text-embedding-3-small", name: "Text Embedding 3 Small (GitHub)", dimensions: 1536 }, { id: "text-embedding-3-large", name: "Text Embedding 3 Large (GitHub)", dimensions: 3072 }] }, website: "https://github.com/features/copilot", notice: { signupUrl: "https://github.com/features/copilot" } },
   cursor: { id: "cursor", alias: "cu", name: "Cursor IDE", icon: "edit_note", color: "#00D4AA", website: "https://cursor.com", notice: { signupUrl: "https://cursor.com" } },
   xai: { id: "xai", alias: "xai", name: "xAI (Grok)", icon: "auto_awesome", color: "#1DA1F2", textIcon: "XA", website: "https://x.ai", notice: { apiKeyUrl: "https://console.x.ai", signupUrl: "https://x.ai" }, serviceKinds: ["llm", "imageToText", "webSearch", "image"], searchViaChat: { defaultModel: "grok-4.20-reasoning", pricingUrl: "https://x.ai/api#pricing" }, authModes: ["oauth", "apikey"], hasOAuth: true },
-  // "kimi-coding": { id: "kimi-coding", alias: "kmc", name: "Kimi Coding", icon: "psychology", color: "#1E40AF", textIcon: "KC" },
+  "kimi-coding": { id: "kimi-coding", alias: "kmc", name: "Kimi Coding", icon: "psychology", color: "#1E40AF", textIcon: "KC", website: "https://www.kimi.com", notice: { signupUrl: "https://www.kimi.com" }, thinkingConfig: THINKING_CONFIG.kimi },
   kilocode: { id: "kilocode", alias: "kc", name: "Kilo Code", icon: "code", color: "#FF6B35", textIcon: "KC", website: "https://kilocode.ai", notice: { signupUrl: "https://kilocode.ai" } },
   cline: { id: "cline", alias: "cl", name: "Cline", icon: "smart_toy", color: "#5B9BD5", textIcon: "CL", website: "https://cline.bot", notice: { signupUrl: "https://cline.bot" } },
   // opencode: { id: "opencode", alias: "oc", name: "OpenCode", icon: "terminal", color: "#E87040", textIcon: "OC" },

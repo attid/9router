@@ -7,6 +7,7 @@ import {
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { extractKimiCodingModelIds, fetchKimiCodingModels } from "@/lib/kimi/models.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 
@@ -34,6 +35,11 @@ const LIVE_MODEL_RESOLVERS = {
     return {
       models: result.models.map((m) => ({ id: m.id, name: m.name })),
     };
+  },
+  "kimi-coding": async (conn) => {
+    const models = await fetchKimiCodingModels(conn);
+    const ids = extractKimiCodingModelIds(models);
+    return ids.length ? { models: ids.map((id) => ({ id })) } : null;
   }
 };
 

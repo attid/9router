@@ -45,7 +45,8 @@ const CLAUDE_CLI_SPOOF_HEADERS = {
 };
 
 // Shared baseUrls
-const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1/messages";
+const KIMI_BASE_URL = "https://api.kimi.com/coding/v1/messages";
+const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1/chat/completions";
 
 export const PROVIDERS = {
   claude: {
@@ -139,7 +140,7 @@ export const PROVIDERS = {
     headers: {}
   },
   kimi: {
-    baseUrl: KIMI_CODING_BASE_URL,
+    baseUrl: KIMI_BASE_URL,
     format: "claude",
     headers: { ...CLAUDE_API_HEADERS }
   },
@@ -219,8 +220,8 @@ export const PROVIDERS = {
   },
   "kimi-coding": {
     baseUrl: KIMI_CODING_BASE_URL,
-    format: "claude",
-    headers: { ...CLAUDE_API_HEADERS },
+    format: "openai",
+    headers: {},
     clientId: "17e5f671-d194-4dfb-9706-5516cb48c098",
     tokenUrl: "https://auth.kimi.com/api/oauth/token",
     refreshUrl: "https://auth.kimi.com/api/oauth/token"
