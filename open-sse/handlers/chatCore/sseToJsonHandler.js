@@ -59,6 +59,18 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
     const delta = choice?.delta || {};
     if (typeof delta.content === "string" && delta.content.length > 0) contentParts.push(delta.content);
     if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) reasoningParts.push(delta.reasoning_content);
+    if (delta.tool_calls) {
+      for (const tc of delta.tool_calls) {
+        const idx = tc.index ?? 0;
+        if (!toolCallMap.has(idx)) {
+          toolCallMap.set(idx, { id: tc.id || "", type: "function", function: { name: tc.function?.name || "", arguments: "" } });
+        }
+        const existing = toolCallMap.get(idx);
+        if (tc.id) existing.id = tc.id;
+        if (tc.function?.name) existing.function.name = tc.function.name;
+        if (tc.function?.arguments) existing.function.arguments += tc.function.arguments;
+      }
+    }
     if (choice?.finish_reason) finishReason = choice.finish_reason;
     if (chunk?.usage && typeof chunk.usage === "object") usage = chunk.usage;
 
@@ -98,7 +110,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog, providerUrl }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && provider === "codex");
   if (!isSSE) return null; // not handled here
@@ -106,9 +118,11 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
   trackDone();
 
   const ctx = {
-    provider, model, connectionId,
+    provider, model, connectionId, apiKeyId: apiKey,
     request: extractRequestConfig(body, stream),
-    providerRequest: finalBody || translatedBody || null
+    providerRequest: finalBody || translatedBody || null,
+    clientEndpoint: clientRawRequest?.endpoint || null,
+    providerUrl: providerUrl || null,
   };
 
   // Codex/Responses API SSE path
@@ -131,7 +145,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
         tokens: { prompt_tokens: usage.input_tokens || 0, completion_tokens: usage.output_tokens || 0 },
         response: { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
         status: "success"
-      }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
+      })).catch(() => {});
 
       // Client is Responses API → return as-is
       if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
@@ -156,9 +170,15 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       const hasToolCalls = toolCalls.length > 0;
 
       if (sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI) {
+        const parts = [];
+        if (textContent) parts.push({ text: textContent });
+        for (const tc of toolCalls) {
+          parts.push({ functionCall: { name: tc.function.name, args: JSON.parse(tc.function.arguments || "{}") } });
+        }
+        if (parts.length === 0) parts.push({ text: "" });
         finalResp = {
           response: {
-            candidates: [{ content: { role: "model", parts: [{ text: textContent || "" }] }, finishReason: "STOP", index: 0 }],
+            candidates: [{ content: { role: "model", parts }, finishReason: "STOP", index: 0 }],
             usageMetadata: { promptTokenCount: inTokens, candidatesTokenCount: outTokens, totalTokenCount: inTokens + outTokens },
             modelVersion: model,
             responseId: jsonResponse.id || `resp_${Date.now()}`
@@ -208,7 +228,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
         finish_reason: parsed.choices?.[0]?.finish_reason || "unknown"
       },
       status: "success"
-    }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
+    })).catch(() => {});
 
     // Strip reasoning_content only when content is non-empty.
     // When content is empty (e.g. thinking models that used all tokens for reasoning),
