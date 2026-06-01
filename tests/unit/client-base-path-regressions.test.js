@@ -31,7 +31,24 @@ const cases = [
       /: `\/api\/media-providers\/tts\/voices\?provider=/,
       /const url = `\/api\/v1\/audio\/speech/,
       /fetch\(`\/api\$\{apiPathWithQuery\}`/,
+      /router\.push\(`\/dashboard\/media-providers\/\$\{kind\}`\)/,
     ],
+  },
+  {
+    file: "src/app/(dashboard)/dashboard/media-providers/[kind]/page.js",
+    forbidden: [/router\.push\(`\/dashboard\/media-providers\/combo\/\$\{created\.id\}`\)/],
+  },
+  {
+    file: "src/app/(dashboard)/dashboard/media-providers/web/page.js",
+    forbidden: [/router\.push\(`\/dashboard\/media-providers\/combo\/\$\{created\.id\}`\)/],
+  },
+  {
+    file: "src/app/(dashboard)/dashboard/usage/components/APIKeyUsageTab.js",
+    forbidden: [/fetch\(`\/api\/usage\/stats\?period=/],
+  },
+  {
+    file: "src/app/(dashboard)/dashboard/usage/page.js",
+    forbidden: [/router\.push\(`\/dashboard\/usage\?\$\{params\.toString\(\)\}`/],
   },
 ];
 
