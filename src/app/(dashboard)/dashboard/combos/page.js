@@ -228,11 +228,16 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled,
               {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
               ) : (
-                combo.models.slice(0, 3).map((model, index) => (
-                  <code key={index} className="max-w-full truncate rounded bg-black/5 px-1.5 py-0.5 font-mono text-[10px] text-text-muted dark:bg-white/5 sm:max-w-[220px]">
-                    {model}
-                  </code>
-                ))
+                combo.models.slice(0, 3).map((entry, index) => {
+                  const model = typeof entry === "string" ? entry : entry.model;
+                  const weight = typeof entry === "string" ? 1 : (entry.weight ?? 1);
+                  const isFallback = weight === 0;
+                  return (
+                    <code key={index} className={`max-w-full truncate rounded px-1.5 py-0.5 font-mono text-[10px] sm:max-w-[220px] ${isFallback ? "bg-amber-500/10 text-amber-700 dark:text-amber-400" : "bg-black/5 text-text-muted dark:bg-white/5"}`}>
+                      {model}{weight > 1 ? ` ×${weight}` : ""}{isFallback ? " (fb)" : ""}
+                    </code>
+                  );
+                })
               )}
               {combo.models.length > 3 && (
                 <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
@@ -287,7 +292,7 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled,
   );
 }
 
-function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({ id, index, model, weight, isFirst, isLast, onEdit, onWeightChange, onMoveUp, onMoveDown, onRemove }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -297,6 +302,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
   };
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(model);
+  const isFallback = weight === 0;
   const commit = () => {
     const trimmed = draft.trim();
     if (trimmed && trimmed !== model) onEdit(trimmed);
@@ -313,7 +319,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 bg-black/[0.02] hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04] transition-colors ${isDragging ? "shadow-md ring-1 ring-primary/30" : ""}`}
+      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 transition-colors ${isFallback ? "bg-black/[0.01] opacity-60 dark:bg-white/[0.01]" : "bg-black/[0.02] hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04]"} ${isDragging ? "shadow-md ring-1 ring-primary/30" : ""}`}
     >
       {/* Drag handle */}
       <button
@@ -353,6 +359,25 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
         </div>
       )}
 
+      {/* Weight input */}
+      <div className="flex items-center gap-0.5 shrink-0">
+        <span className="text-[10px] text-text-muted">w:</span>
+        <input
+          type="number"
+          min="0"
+          value={weight}
+          onChange={(e) => onWeightChange(Math.max(0, parseInt(e.target.value, 10) || 0))}
+          className="w-8 px-1 py-0.5 text-[10px] font-mono text-center bg-white dark:bg-black/20 border border-black/10 dark:border-white/10 rounded outline-none focus:border-primary/40"
+          title="Weight (0 = fallback only)"
+        />
+      </div>
+
+      {isFallback && (
+        <span className="text-[9px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1 py-0.5 rounded shrink-0">
+          fallback
+        </span>
+      )}
+
       {/* Priority arrows */}
       <div className="flex shrink-0 items-center gap-0.5">
         <button
@@ -388,7 +413,12 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
 function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
-  const [models, setModels] = useState(combo?.models || []);
+  const [models, setModels] = useState(() => {
+    if (!combo?.models) return [];
+    return combo.models.map(m =>
+      typeof m === "string" ? { model: m, weight: 1 } : { model: m.model, weight: m.weight ?? 1 }
+    );
+  });
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -400,7 +430,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   );
 
   // Use stable index-based IDs so duplicates and similar names are handled correctly
-  const modelItems = models.map((model, i) => ({ uid: `item-${i}`, model }));
+  const modelItems = models.map((entry, i) => ({ uid: `item-${i}`, entry }));
 
   const handleDragEnd = (event) => {
     const { active, over } = event;
@@ -448,14 +478,20 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
     else setNameError("");
   };
 
-  const handleAddModel = (model) => {
-    if (!models.includes(model.value)) {
-      setModels([...models, model.value]);
+  const handleAddModel = (selected) => {
+    if (!models.some(m => m.model === selected.value)) {
+      setModels([...models, { model: selected.value, weight: 1 }]);
     }
   };
 
   const handleDeselectModel = (model) => {
-    setModels(models.filter((m) => m !== model.value));
+    setModels(models.filter((m) => m.model !== model.value));
+  };
+
+  const handleWeightChange = (index, weight) => {
+    const newModels = [...models];
+    newModels[index] = { ...newModels[index], weight };
+    setModels(newModels);
   };
 
   const handleRemoveModel = (index) => {
@@ -520,19 +556,21 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} modifiers={[restrictToVerticalAxis, restrictToParentElement]}>
               <SortableContext items={modelItems.map((m) => m.uid)} strategy={verticalListSortingStrategy}>
                 <div className="flex max-h-[55vh] min-w-0 flex-col gap-1 overflow-y-auto sm:max-h-[350px]">
-                  {modelItems.map(({ uid, model }, index) => (
+                  {modelItems.map(({ uid, entry }, index) => (
                     <ModelItem
                       key={uid}
                       id={uid}
                       index={index}
-                      model={model}
+                      model={entry.model}
+                      weight={entry.weight}
                       isFirst={index === 0}
                       isLast={index === modelItems.length - 1}
                       onEdit={(newVal) => {
                         const updated = [...models];
-                        updated[index] = newVal;
+                        updated[index] = { ...updated[index], model: newVal };
                         setModels(updated);
                       }}
+                      onWeightChange={(w) => handleWeightChange(index, w)}
                       onMoveUp={() => handleMoveUp(index)}
                       onMoveDown={() => handleMoveDown(index)}
                       onRemove={() => handleRemoveModel(index)}
@@ -580,7 +618,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
         modelAliases={modelAliases}
         title="Add Model to Combo"
         kindFilter={kindFilter}
-        addedModelValues={models}
+        addedModelValues={models.map((m) => m.model)}
         closeOnSelect={false}
       />
     </>

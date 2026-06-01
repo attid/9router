@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { normalizeComboModels } from "../../comboUtils.js";
 
 function rowToCombo(row) {
   if (!row) return null;
@@ -39,7 +40,7 @@ export async function createCombo(data) {
     id: uuidv4(),
     name: data.name,
     kind: data.kind || null,
-    models: data.models || [],
+    models: normalizeComboModels(data.models),
     createdAt: now,
     updatedAt: now,
   };
@@ -56,7 +57,8 @@ export async function updateCombo(id, data) {
   db.transaction(() => {
     const row = db.get(`SELECT * FROM combos WHERE id = ?`, [id]);
     if (!row) return;
-    const merged = { ...rowToCombo(row), ...data, updatedAt: new Date().toISOString() };
+    const normalizedData = data.models ? { ...data, models: normalizeComboModels(data.models) } : data;
+    const merged = { ...rowToCombo(row), ...normalizedData, updatedAt: new Date().toISOString() };
     db.run(
       `UPDATE combos SET name = ?, kind = ?, models = ?, updatedAt = ? WHERE id = ?`,
       [merged.name, merged.kind, stringifyJson(merged.models || []), merged.updatedAt, id]
