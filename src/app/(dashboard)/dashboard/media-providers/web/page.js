@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Card, Badge, Button } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { AI_PROVIDERS, getProvidersByKind } from "@/shared/constants/providers";
-import { apiPath } from "@/lib/basePath";
+import { apiPath, dashboardPath } from "@/lib/basePath";
 
 function getEffectiveStatus(conn) {
   const isCooldown = Object.entries(conn).some(
@@ -182,7 +182,7 @@ export default function WebProvidersPage() {
     });
     if (res.ok) {
       const created = await res.json();
-      router.push(`/dashboard/media-providers/combo/${created.id}`);
+      router.push(dashboardPath(`/dashboard/media-providers/combo/${created.id}`));
     } else {
       const err = await res.json();
       alert(err.error || "Failed to create combo");

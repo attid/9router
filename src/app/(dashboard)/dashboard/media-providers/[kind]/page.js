@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { Card, Badge, Button, Toggle, AddCustomEmbeddingModal } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS, getProvidersByKind } from "@/shared/constants/providers";
-import { apiPath } from "@/lib/basePath";
+import { apiPath, dashboardPath } from "@/lib/basePath";
 
 // Kinds that support combos (currently disabled for image/tts — temporarily hidden).
 // webSearch/webFetch handled by /web page.
@@ -221,7 +221,7 @@ export default function MediaProviderKindPage() {
     });
     if (res.ok) {
       const created = await res.json();
-      router.push(`/dashboard/media-providers/combo/${created.id}`);
+      router.push(dashboardPath(`/dashboard/media-providers/combo/${created.id}`));
     } else {
       const err = await res.json();
       alert(err.error || "Failed to create combo");

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
+import { apiPath } from "@/lib/basePath";
 import { buildApiKeyUsageRows } from "./apiKeyUsageReport";
 
 const fmt = (n) => new Intl.NumberFormat().format(n || 0);
@@ -25,7 +26,7 @@ export default function APIKeyUsageTab({ period }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/usage/stats?period=${encodeURIComponent(period)}`);
+      const res = await fetch(apiPath(`/api/usage/stats?period=${encodeURIComponent(period)}`));
       if (!res.ok) throw new Error(`Failed to load usage stats (${res.status})`);
       setStats(await res.json());
     } catch (err) {
