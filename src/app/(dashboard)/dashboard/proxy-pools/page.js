@@ -124,7 +124,8 @@ export default function ProxyPoolsPage() {
         method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-      });
+        }
+      );
 
       if (res.ok) {
         await fetchProxyPools();

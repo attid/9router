@@ -8,7 +8,7 @@ import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 import { apiPath } from "@/lib/basePath";
 
-const ENDPOINT = "/api/cli-tools/hermes-settings";
+const ENDPOINT = apiPath("/api/cli-tools/hermes-settings");
 
 export default function HermesToolCard({
   tool,

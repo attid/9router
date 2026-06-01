@@ -1,3 +1,5 @@
+import { apiPath } from "@/lib/basePath";
+
 /**
  * TTS Provider Configuration
  * Centralized config for TTS provider UI behavior
@@ -34,7 +36,7 @@ export const TTS_PROVIDER_CONFIG = {
     hasVoiceIdInput: true, // allow manual voice id entry
     voiceSource: "api-language", // grouped by language from backend
     modelKey: "elevenlabs-tts-models",
-    apiEndpoint: "/api/media-providers/tts/elevenlabs/voices",
+    apiEndpoint: apiPath("/api/media-providers/tts/elevenlabs/voices"),
   },
   "edge-tts": {
     hasLanguageDropdown: false,
@@ -64,7 +66,7 @@ export const TTS_PROVIDER_CONFIG = {
     hasModelSelector: false,
     hasBrowseButton: true,
     voiceSource: "api-language",
-    apiEndpoint: "/api/media-providers/tts/deepgram/voices",
+    apiEndpoint: apiPath("/api/media-providers/tts/deepgram/voices"),
   },
   "huggingface": {
     hasModelSelector: true,
@@ -101,7 +103,7 @@ export const TTS_PROVIDER_CONFIG = {
     hasVoiceIdInput: true,
     voiceSource: "api-language",
     modelKey: "inworld-tts-models",
-    apiEndpoint: "/api/media-providers/tts/inworld/voices",
+    apiEndpoint: apiPath("/api/media-providers/tts/inworld/voices"),
   },
   "qwen": {
     hasModelSelector: true,
