@@ -26,17 +26,16 @@ describe("requestDetailsDb persistence", () => {
       getDataDir: () => tempDir,
     }));
 
-    vi.doMock("@/lib/localDb", () => ({
-      getSettings: vi.fn(async () => ({
-        enableObservability: true,
-        observabilityBatchSize: 1,
-        observabilityMaxRecords: 50,
-        observabilityFlushIntervalMs: 1,
-        observabilityMaxJsonSize: 8,
-      })),
-    }));
-
     const { saveRequestDetail, getRequestDetails } = await import("../../src/lib/requestDetailsDb.js");
+    const { updateSettings } = await import("../../src/lib/db/index.js");
+
+    await updateSettings({
+      enableObservability: true,
+      observabilityBatchSize: 1,
+      observabilityMaxRecords: 50,
+      observabilityFlushIntervalMs: 1,
+      observabilityMaxJsonSize: 8,
+    });
 
     await saveRequestDetail({
       id: "req-1",
