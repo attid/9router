@@ -1,15 +1,17 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo } from "react";
 import Link from "next/link";
 import PropTypes from "prop-types";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import HeaderMenu from "@/shared/components/HeaderMenu";
 import ThemeToggle from "@/shared/components/ThemeToggle";
+import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS } from "@/shared/constants/providers";
 import { translate } from "@/i18n/runtime";
+import { apiPath } from "@/lib/basePath";
 
 const getPageInfo = (pathname) => {
   if (!pathname) return { title: "", description: "", breadcrumbs: [] };
@@ -27,7 +29,7 @@ const getPageInfo = (pathname) => {
       breadcrumbs: [
         { label: "Media Providers", href: `/dashboard/media-providers/${kindId}` },
         { label: kindConfig?.label || kindId, href: `/dashboard/media-providers/${kindId}` },
-        { label: provider?.name || providerId, image: `/providers/${providerId}.png` },
+        { label: provider?.name || providerId, image: apiPath(`/providers/${providerId}.png`) },
       ],
     };
   }
@@ -59,7 +61,7 @@ const getPageInfo = (pathname) => {
           { label: "Providers", href: "/dashboard/providers" },
           {
             label: providerInfo.name,
-            image: `/providers/${providerInfo.id}.png`,
+            image: apiPath(`/providers/${providerInfo.id}.png`),
           },
         ],
       };
@@ -123,6 +125,13 @@ const getPageInfo = (pathname) => {
       icon: "lan",
       breadcrumbs: [],
     };
+  if (pathname.includes("/skills"))
+    return {
+      title: "Agent Skills",
+      description: "Copy a link and paste to your AI to use 9Router — no install needed",
+      icon: "extension",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/endpoint"))
     return {
       title: "Endpoint",
@@ -164,14 +173,42 @@ const getPageInfo = (pathname) => {
 export default function Header({ onMenuClick, showMenuButton = true }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [displayName, setDisplayName] = useState("");
+  const [loginMethod, setLoginMethod] = useState("");
 
   // Memoize page info to prevent unnecessary recalculations
   const pageInfo = useMemo(() => getPageInfo(pathname), [pathname]);
   const { title, description, icon, breadcrumbs } = pageInfo;
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAuthStatus() {
+      try {
+        const res = await fetch(apiPath("/api/auth/status"), { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) {
+          setDisplayName(data?.displayName || data?.oidcName || data?.oidcEmail || "");
+          setLoginMethod(data?.loginMethod || "");
+        }
+      } catch {
+        if (!cancelled) {
+          setDisplayName("");
+          setLoginMethod("");
+        }
+      }
+    }
+
+    loadAuthStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const handleLogout = async () => {
     try {
-      const res = await fetch("/api/auth/logout", { method: "POST" });
+      const res = await fetch(apiPath("/api/auth/logout"), { method: "POST" });
       if (res.ok) {
         router.push("/login");
         router.refresh();
@@ -258,10 +295,54 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
 
       {/* Right actions */}
       <div className="flex items-center gap-1 shrink-0">
+        {displayName && loginMethod === "OIDC" && (
+          <div className="hidden sm:flex items-center max-w-[220px] px-3 py-1.5 rounded-full border border-border bg-surface/70 text-xs text-text-muted truncate">
+            <span className="material-symbols-outlined text-[14px] mr-1.5 text-primary">person</span>
+            <span className="truncate">{displayName}</span>
+            <span className="ml-2 shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+              OIDC
+            </span>
+          </div>
+        )}
+        <HeaderSearch />
         <ThemeToggle />
         <HeaderMenu onLogout={handleLogout} />
       </div>
     </header>
+  );
+}
+
+function HeaderSearch() {
+  const visible = useHeaderSearchStore((s) => s.visible);
+  const query = useHeaderSearchStore((s) => s.query);
+  const placeholder = useHeaderSearchStore((s) => s.placeholder);
+  const setQuery = useHeaderSearchStore((s) => s.setQuery);
+
+  if (!visible) return null;
+
+  return (
+    <div className="relative w-[160px] sm:w-[220px]">
+      <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-text-muted text-[16px] pointer-events-none">
+        search
+      </span>
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder={placeholder}
+        className="w-full h-8 pl-7 pr-7 rounded-lg border border-border bg-surface/60 text-sm focus:outline-none focus:border-primary/50 transition-colors"
+      />
+      {query && (
+        <button
+          type="button"
+          onClick={() => setQuery("")}
+          className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main p-0.5 rounded"
+          aria-label="Clear search"
+        >
+          <span className="material-symbols-outlined text-[16px]">close</span>
+        </button>
+      )}
+    </div>
   );
 }
 
