@@ -341,15 +341,18 @@ export async function getUsageHistory(filter = {}) {
  * @param {Date} since - Start of time window
  * @returns {Promise<number>} Total tokens (prompt + completion)
  */
-export async function getUsageByApiKey(apiKey, since) {
+export async function getUsageByApiKey(apiKey, since, options = {}) {
   const db = await getUsageDb();
   const history = db.data.history || [];
   const sinceMs = since.getTime();
+  const models = options.models instanceof Set ? options.models : null;
+  if (models && models.size === 0) return 0;
 
   let total = 0;
   for (const entry of history) {
     if (entry.apiKey !== apiKey) continue;
     if (new Date(entry.timestamp).getTime() < sinceMs) continue;
+    if (models && !models.has(entry.model)) continue;
     total += (entry.tokens?.prompt_tokens || entry.tokens?.input_tokens || 0) + (entry.tokens?.completion_tokens || entry.tokens?.output_tokens || 0);
   }
   return total;
