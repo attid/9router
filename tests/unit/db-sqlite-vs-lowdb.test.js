@@ -59,6 +59,11 @@ describe("DB SQLite layer — public API parity", () => {
     const all = await sqliteDb.getApiKeys();
     expect(all.find((x) => x.id === k.id)).toBeDefined();
 
+    const renamed = await sqliteDb.updateApiKey(k.id, { name: "renamed-key" });
+    expect(renamed.name).toBe("renamed-key");
+    expect(renamed.key).toBe(k.key);
+    expect((await sqliteDb.getApiKeyById(k.id)).name).toBe("renamed-key");
+
     expect(await sqliteDb.validateApiKey(k.key)).toBeTruthy();
     expect(await sqliteDb.validateApiKey("invalid")).toBeFalsy();
 

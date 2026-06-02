@@ -21,7 +21,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive, limits, allowedModels } = body;
+    const { isActive, limits, allowedModels, name } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,6 +30,13 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+
+    if (name !== undefined) {
+      if (typeof name !== "string" || !name.trim()) {
+        return NextResponse.json({ error: "Name is required" }, { status: 400 });
+      }
+      updateData.name = name.trim();
+    }
 
     if (limits !== undefined) {
       // Validate limits

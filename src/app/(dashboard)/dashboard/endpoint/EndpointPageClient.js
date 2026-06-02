@@ -120,8 +120,11 @@ export default function APIPageClient({ machineId }) {
 
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
+  const [keySearch, setKeySearch] = useState("");
   // Token usage & limit editing state
   const [keyUsage, setKeyUsage] = useState({});
+  const [editingName, setEditingName] = useState(null);
+  const [editNameValue, setEditNameValue] = useState("");
   const [editingLimits, setEditingLimits] = useState(null);
   const [editLimitsValues, setEditLimitsValues] = useState({ hourly: "", daily: "", weekly: "" });
   const [editingModels, setEditingModels] = useState(null);
@@ -132,6 +135,20 @@ export default function APIPageClient({ machineId }) {
   const [modelAliases, setModelAliases] = useState({});
 
   const { copied, copy } = useCopyToClipboard();
+
+  const keySearchQuery = keySearch.trim().toLowerCase();
+  const sortedKeys = [...keys].sort((a, b) => {
+    const nameCmp = String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" });
+    if (nameCmp !== 0) return nameCmp;
+    return String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
+  });
+  const visibleApiKeys = keySearchQuery
+    ? sortedKeys.filter((key) => {
+        const allowed = (key.allowedModels || []).join(" ");
+        const haystack = `${key.name || ""} ${key.key || ""} ${allowed}`.toLowerCase();
+        return haystack.includes(keySearchQuery);
+      })
+    : sortedKeys;
 
   // Security gate: block remote exposure while dashboard uses default password or login is off.
   const isLoginUnsafe = !requireLogin || !hasPassword;
@@ -805,6 +822,25 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const handleSaveName = async (keyId) => {
+    const name = editNameValue.trim();
+    if (!name) return;
+    try {
+      const res = await fetch(apiPath(`/api/keys/${keyId}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (res.ok) {
+        await fetchData();
+        setEditingName(null);
+        setEditNameValue("");
+      }
+    } catch (error) {
+      console.log("Error renaming key:", error);
+    }
+  };
+
   const handleSaveLimits = async (keyId) => {
     const limits = {
       hourly: editLimitsValues.hourly ? parseInt(editLimitsValues.hourly, 10) : null,
@@ -1255,13 +1291,77 @@ export default function APIPageClient({ machineId }) {
           </div>
         ) : (
           <div className="flex flex-col">
-            {keys.map((key) => (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 pb-4">
+              <Input
+                size="sm"
+                value={keySearch}
+                onChange={(e) => setKeySearch(e.target.value)}
+                placeholder="Search by name, key, or model..."
+              />
+              <p className="text-xs text-text-muted shrink-0">
+                {visibleApiKeys.length} / {keys.length} keys
+              </p>
+            </div>
+            {visibleApiKeys.length === 0 ? (
+              <div className="text-center py-10 border-t border-border">
+                <p className="text-sm font-medium text-text-main">No keys match this filter</p>
+                <button
+                  onClick={() => setKeySearch("")}
+                  className="mt-2 text-sm text-primary hover:underline"
+                >
+                  Clear filter
+                </button>
+              </div>
+            ) : visibleApiKeys.map((key) => (
               <div
                 key={key.id}
                 className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{key.name}</p>
+                  {editingName === key.id ? (
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-1">
+                      <Input
+                        size="sm"
+                        value={editNameValue}
+                        onChange={(e) => setEditNameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleSaveName(key.id);
+                          if (e.key === "Escape") {
+                            setEditingName(null);
+                            setEditNameValue("");
+                          }
+                        }}
+                        autoFocus
+                      />
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={() => handleSaveName(key.id)}>Save</Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setEditingName(null);
+                            setEditNameValue("");
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">{key.name}</p>
+                      <button
+                        onClick={() => {
+                          setEditingName(key.id);
+                          setEditNameValue(key.name || "");
+                        }}
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                        title="Rename key"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">edit</span>
+                      </button>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 mt-1">
                     <code className="text-xs text-text-muted font-mono">
                       {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
