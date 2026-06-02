@@ -45,6 +45,6 @@ describe("combo free flag", () => {
 
     const preserved = await getComboById(combo.id);
     expect(preserved.isFree).toBe(true);
-    expect(preserved.models).toEqual(["provider/other-model"]);
+    expect(preserved.models.map((entry) => typeof entry === "string" ? entry : entry.model)).toEqual(["provider/other-model"]);
   });
 });
