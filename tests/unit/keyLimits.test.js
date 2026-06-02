@@ -33,6 +33,7 @@ import { getUsageByApiKey, saveRequestUsage, statsEmitter } from "../../src/lib/
 import { getHourStart, getDayStart, getWeekStart, counters } from "../../src/sse/services/keyLimits.js";
 import { checkKeyLimits, getKeyUsageStats } from "../../src/sse/services/keyLimits.js";
 import { getApiKeyByValue, getComboByName } from "@/lib/localDb.js";
+import { logUsage } from "../../open-sse/utils/usageTracking.js";
 
 async function resetUsage() {
   const db = await getAdapter();
@@ -346,5 +347,29 @@ describe("statsEmitter increment", () => {
     });
 
     expect(entry.hourly.total).toBe(0);
+  });
+
+  it("does not increment tracked key when streaming logUsage receives unmetered metadata", async () => {
+    vi.mocked(getApiKeyByValue).mockResolvedValue({
+      key: "sk-test",
+      allowedModels: ["free_kimi"],
+      limits: { hourly: 10000, daily: 0, weekly: 0 },
+    });
+    await checkKeyLimits("sk-test");
+
+    const entry = counters.get("sk-test");
+    logUsage(
+      "minimax",
+      { prompt_tokens: 100, completion_tokens: 50 },
+      "MiniMax-M3",
+      "conn-1",
+      "sk-test",
+      { requestedModel: "free_kimi", metered: false }
+    );
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(entry.hourly.total).toBe(0);
+    await expect(getUsageByApiKey("sk-test", new Date(0))).resolves.toBe(150);
+    await expect(getUsageByApiKey("sk-test", new Date(0), { meteredOnly: true })).resolves.toBe(0);
   });
 });

@@ -9,6 +9,8 @@ const originalDataDir = process.env.DATA_DIR;
 let tempDir;
 let sqliteDb;
 
+const modelNames = (models) => models.map((entry) => typeof entry === "string" ? entry : entry.model);
+
 beforeAll(async () => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-db-compare-"));
   process.env.DATA_DIR = tempDir;
@@ -130,12 +132,12 @@ describe("DB SQLite layer — public API parity", () => {
   it("combos: CRUD", async () => {
     const c = await sqliteDb.createCombo({ name: "combo1", models: ["m1", "m2"], kind: "fallback" });
     expect(c.id).toBeDefined();
-    expect(c.models).toEqual(["m1", "m2"]);
+    expect(modelNames(c.models)).toEqual(["m1", "m2"]);
     const byName = await sqliteDb.getComboByName("combo1");
     expect(byName.id).toBe(c.id);
     await sqliteDb.updateCombo(c.id, { models: ["m3"] });
     const updated = await sqliteDb.getComboById(c.id);
-    expect(updated.models).toEqual(["m3"]);
+    expect(modelNames(updated.models)).toEqual(["m3"]);
     expect(await sqliteDb.deleteCombo(c.id)).toBe(true);
   });
 
@@ -199,6 +201,33 @@ describe("DB SQLite layer — public API parity", () => {
     expect(stats.byProvider.openai).toBeDefined();
     expect(stats.byProvider.openai.requests).toBeGreaterThanOrEqual(2);
     expect(stats.byProvider.openai.promptTokens).toBeGreaterThanOrEqual(300);
+  });
+
+  it("usage: unmetered entries stay in reports but not metered limit totals", async () => {
+    await sqliteDb.saveRequestUsage({
+      provider: "openai", model: "metered-model", apiKey: "sk-meter-test",
+      tokens: { prompt_tokens: 100, completion_tokens: 50 },
+      endpoint: "/v1/chat/completions", status: "ok",
+    });
+    await sqliteDb.saveRequestUsage({
+      provider: "openai", model: "free-model", apiKey: "sk-meter-test",
+      requestedModel: "free_combo", metered: false,
+      tokens: { prompt_tokens: 600, completion_tokens: 500 },
+      endpoint: "/v1/chat/completions", status: "ok",
+    });
+
+    const hist = await sqliteDb.getUsageHistory({ provider: "openai" });
+    expect(hist.some((entry) => entry.model === "free-model")).toBe(true);
+
+    const stats = await sqliteDb.getUsageStats("24h");
+    expect(stats.byModel["free-model (openai)"].promptTokens).toBe(600);
+    const apiKeyRows = Object.values(stats.byApiKey || {}).filter((entry) => entry.apiKey === "sk-meter-test");
+    const totalPrompt = apiKeyRows.reduce((sum, entry) => sum + entry.promptTokens, 0);
+    const totalCompletion = apiKeyRows.reduce((sum, entry) => sum + entry.completionTokens, 0);
+    expect(totalPrompt).toBe(700);
+    expect(totalCompletion).toBe(550);
+
+    await expect(sqliteDb.getUsageByApiKey("sk-meter-test", new Date(0), { meteredOnly: true })).resolves.toBe(150);
   });
 
   it("usage: pending tracking in-memory", () => {
