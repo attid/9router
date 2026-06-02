@@ -8,7 +8,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getSettings, getApiKeyByValue } from "@/lib/localDb";
+import { getComboByName, getSettings, getApiKeyByValue } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -80,8 +80,16 @@ export async function handleChat(request, clientRawRequest = null) {
     }
   }
 
-  // Check API key token limits
-  if (apiKey) {
+  if (!modelStr) {
+    log.warn("CHAT", "Missing model");
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  }
+
+  const requestedCombo = await getComboByName(modelStr);
+  const requestedComboIsFree = requestedCombo?.isFree === true;
+
+  // Free combos are explicitly unmetered; direct models and regular combos still count.
+  if (apiKey && !requestedComboIsFree) {
     const limitCheck = await checkKeyLimits(apiKey);
     if (!limitCheck.allowed) {
       log.warn("AUTH", `Token limit exceeded for key ${log.maskKey(apiKey)}`);
@@ -102,11 +110,6 @@ export async function handleChat(request, clientRawRequest = null) {
         }
       );
     }
-  }
-
-  if (!modelStr) {
-    log.warn("CHAT", "Missing model");
-    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
@@ -135,10 +138,9 @@ export async function handleChat(request, clientRawRequest = null) {
     
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
     log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
-    const comboClientRawRequest = {
-      ...clientRawRequest,
-      usageMeta: { requestedModel: modelStr, metered: false },
-    };
+    const comboClientRawRequest = requestedComboIsFree
+      ? { ...clientRawRequest, usageMeta: { requestedModel: modelStr, metered: false } }
+      : clientRawRequest;
     return handleComboChat({
       body,
       models: comboModels,
@@ -172,10 +174,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       
       const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
-      const comboClientRawRequest = {
-        ...clientRawRequest,
-        usageMeta: { requestedModel: modelStr, metered: false },
-      };
+      const combo = await getComboByName(modelStr);
+      const comboClientRawRequest = combo?.isFree === true
+        ? { ...clientRawRequest, usageMeta: { requestedModel: modelStr, metered: false } }
+        : clientRawRequest;
       return handleComboChat({
         body,
         models: comboModels,

@@ -55,6 +55,10 @@ export async function PUT(request, { params }) {
         }
       }
     }
+
+    if (Object.hasOwn(body, "isFree")) {
+      body.isFree = body.isFree === true;
+    }
     
     // Capture previous name to invalidate rotation state on rename
     const prev = await getComboById(id);
