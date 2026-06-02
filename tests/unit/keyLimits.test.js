@@ -214,7 +214,7 @@ describe("checkKeyLimits", () => {
     expect(result).toEqual({ allowed: true });
   });
 
-  it("does not count underlying usage for combo-only API keys", async () => {
+  it("counts legacy underlying usage for combo-only API keys when entries are not explicitly unmetered", async () => {
     const { saveRequestUsage, checkKeyLimits, getKeyUsageStats, getApiKeyByValue, getComboByName } = await loadModules();
     await saveUsage(
       saveRequestUsage,
@@ -233,6 +233,30 @@ describe("checkKeyLimits", () => {
         return { name: "free_kimi", models: ["moonshot/kimi-k2.5"] };
       }
       return null;
+    });
+
+    const result = await checkKeyLimits("sk-test");
+    const stats = await getKeyUsageStats("sk-test");
+
+    expect(result.allowed).toBe(false);
+    expect(stats.hourly.used).toBe(1100);
+  });
+
+  it("does not count usage entries explicitly marked as unmetered", async () => {
+    const { saveRequestUsage, checkKeyLimits, getKeyUsageStats, getApiKeyByValue } = await loadModules();
+    await saveRequestUsage({
+      apiKey: "sk-test",
+      timestamp: new Date().toISOString(),
+      provider: "moonshot",
+      model: "moonshot/kimi-k2.5",
+      requestedModel: "free_kimi",
+      metered: false,
+      tokens: { prompt_tokens: 600, completion_tokens: 500 },
+    });
+    getApiKeyByValue.mockResolvedValue({
+      key: "sk-test",
+      allowedModels: ["free_kimi"],
+      limits: { hourly: 1000, daily: 0, weekly: 0 },
     });
 
     const result = await checkKeyLimits("sk-test");
@@ -274,7 +298,7 @@ describe("statsEmitter increment", () => {
     expect(counters.has("sk-unknown")).toBe(false);
   });
 
-  it("does not increment tracked combo-only key from underlying combo model usage", async () => {
+  it("increments tracked combo-only key from unmarked underlying usage", async () => {
     const { checkKeyLimits, counters, statsEmitter, getApiKeyByValue, getComboByName } = await loadModules();
     getApiKeyByValue.mockResolvedValue({
       key: "sk-test",
@@ -293,6 +317,27 @@ describe("statsEmitter increment", () => {
     statsEmitter.emit("update", {
       apiKey: "sk-test",
       model: "moonshot/kimi-k2.5",
+      tokens: { prompt_tokens: 100, completion_tokens: 50 },
+    });
+
+    expect(entry.hourly.total).toBe(150);
+  });
+
+  it("does not increment tracked key from usage explicitly marked as unmetered", async () => {
+    const { checkKeyLimits, counters, statsEmitter, getApiKeyByValue } = await loadModules();
+    getApiKeyByValue.mockResolvedValue({
+      key: "sk-test",
+      allowedModels: ["free_kimi"],
+      limits: { hourly: 10000, daily: 0, weekly: 0 },
+    });
+    await checkKeyLimits("sk-test");
+
+    const entry = counters.get("sk-test");
+    statsEmitter.emit("update", {
+      apiKey: "sk-test",
+      model: "moonshot/kimi-k2.5",
+      requestedModel: "free_kimi",
+      metered: false,
       tokens: { prompt_tokens: 100, completion_tokens: 50 },
     });
 

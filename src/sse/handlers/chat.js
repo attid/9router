@@ -135,11 +135,15 @@ export async function handleChat(request, clientRawRequest = null) {
     
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
     log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    const comboClientRawRequest = {
+      ...clientRawRequest,
+      usageMeta: { requestedModel: modelStr, metered: false },
+    };
     return handleComboChat({
       body,
       models: comboModels,
       comboName: modelStr,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, comboClientRawRequest, request, apiKey),
       log,
       comboStrategy,
       comboStickyLimit
@@ -168,11 +172,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       
       const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+      const comboClientRawRequest = {
+        ...clientRawRequest,
+        usageMeta: { requestedModel: modelStr, metered: false },
+      };
       return handleComboChat({
         body,
         models: comboModels,
         comboName: modelStr,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, comboClientRawRequest, request, apiKey),
         log,
         comboStrategy,
         comboStickyLimit

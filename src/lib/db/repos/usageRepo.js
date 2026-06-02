@@ -248,6 +248,9 @@ export async function saveRequestUsage(entry) {
     entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens);
 
     const tokens = entry.tokens || {};
+    const meta = {};
+    if (entry.requestedModel) meta.requestedModel = entry.requestedModel;
+    if (entry.metered !== undefined) meta.metered = entry.metered;
     const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
     const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
 
@@ -260,7 +263,7 @@ export async function saveRequestUsage(entry) {
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
+          stringifyJson(tokens), stringifyJson(meta),
         ]
       );
 
@@ -309,13 +312,10 @@ export async function getUsageHistory(filter = {}) {
 export async function getUsageByApiKey(apiKey, since, options = {}) {
   const db = await getAdapter();
   const sinceIso = since instanceof Date ? since.toISOString() : new Date(since).toISOString();
-  const models = options.models instanceof Set ? [...options.models] : null;
-  if (models && models.length === 0) return 0;
-
-  const modelClause = models ? ` AND model IN (${models.map(() => "?").join(", ")})` : "";
+  const meteredClause = options.meteredOnly ? ` AND COALESCE(json_extract(meta, '$.metered'), 1) != 0` : "";
   const row = db.get(
-    `SELECT COALESCE(SUM(promptTokens + completionTokens), 0) AS total FROM usageHistory WHERE apiKey = ? AND timestamp >= ?${modelClause}`,
-    models ? [apiKey, sinceIso, ...models] : [apiKey, sinceIso]
+    `SELECT COALESCE(SUM(promptTokens + completionTokens), 0) AS total FROM usageHistory WHERE apiKey = ? AND timestamp >= ?${meteredClause}`,
+    [apiKey, sinceIso]
   );
   return Number(row?.total || 0);
 }
