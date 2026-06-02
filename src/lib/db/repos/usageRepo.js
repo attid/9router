@@ -306,12 +306,16 @@ export async function getUsageHistory(filter = {}) {
   }));
 }
 
-export async function getUsageByApiKey(apiKey, since) {
+export async function getUsageByApiKey(apiKey, since, options = {}) {
   const db = await getAdapter();
   const sinceIso = since instanceof Date ? since.toISOString() : new Date(since).toISOString();
+  const models = options.models instanceof Set ? [...options.models] : null;
+  if (models && models.length === 0) return 0;
+
+  const modelClause = models ? ` AND model IN (${models.map(() => "?").join(", ")})` : "";
   const row = db.get(
-    `SELECT COALESCE(SUM(promptTokens + completionTokens), 0) AS total FROM usageHistory WHERE apiKey = ? AND timestamp >= ?`,
-    [apiKey, sinceIso]
+    `SELECT COALESCE(SUM(promptTokens + completionTokens), 0) AS total FROM usageHistory WHERE apiKey = ? AND timestamp >= ?${modelClause}`,
+    models ? [apiKey, sinceIso, ...models] : [apiKey, sinceIso]
   );
   return Number(row?.total || 0);
 }

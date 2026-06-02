@@ -3,7 +3,6 @@
 import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { UsageStats, RequestLogger, CardSkeleton, SegmentedControl } from "@/shared/components";
-import { dashboardPath } from "@/lib/basePath";
 import RequestDetailsTab from "./components/RequestDetailsTab";
 import APIKeyUsageTab from "./components/APIKeyUsageTab";
 
@@ -38,7 +37,7 @@ function UsageContent() {
     if (value === activeTab) return;
     const params = new URLSearchParams(searchParams);
     params.set("tab", value);
-    router.push(dashboardPath(`/dashboard/usage?${params.toString()}`), { scroll: false });
+    router.push(`/dashboard/usage?${params.toString()}`, { scroll: false });
   };
 
   return (

@@ -13,7 +13,7 @@ import ModelsCard from "@/app/(dashboard)/dashboard/providers/components/ModelsC
 import { TTS_PROVIDER_CONFIG } from "@/shared/constants/ttsProviders";
 import { getTtsVoicesForModel } from "open-sse/config/ttsModels.js";
 import { GOOGLE_TTS_LANGUAGES } from "open-sse/config/googleTtsLanguages.js";
-import { apiPath, dashboardPath } from "@/lib/basePath";
+import { apiPath } from "@/lib/basePath";
 
 // Shared row layout — defined outside components to avoid re-mount on re-render
 function Row({ label, children }) {
@@ -1719,7 +1719,7 @@ export default function MediaProviderDetailPage() {
     if (!confirm("Delete this Custom Embedding node?")) return;
     try {
       const res = await fetch(apiPath(`/api/provider-nodes/${id}`), { method: "DELETE" });
-      if (res.ok) router.push(dashboardPath(`/dashboard/media-providers/${kind}`));
+      if (res.ok) router.push(`/dashboard/media-providers/${kind}`);
     } catch (error) {
       console.log("Error deleting custom embedding node:", error);
     }

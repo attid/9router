@@ -1,4 +1,4 @@
-import { getApiKeyByValue } from "../../lib/localDb.js";
+import { getApiKeyByValue, getComboByName } from "../../lib/localDb.js";
 import { getUsageByApiKey, statsEmitter } from "../../lib/usageDb.js";
 
 // --- Calendar period helpers ---
@@ -25,6 +25,33 @@ function extractTokens(entry) {
        + (entry.tokens?.completion_tokens || entry.tokens?.output_tokens || 0);
 }
 
+async function getMeteredModelsForKey(keyConfig) {
+  const allowedModels = Array.isArray(keyConfig?.allowedModels)
+    ? keyConfig.allowedModels.filter(Boolean)
+    : [];
+
+  if (allowedModels.length === 0) return null;
+
+  const directModels = [];
+  for (const model of allowedModels) {
+    const combo = await getComboByName(model);
+    if (!combo) directModels.push(model);
+  }
+
+  return new Set(directModels);
+}
+
+function getMeteredModelsKey(meteredModels) {
+  if (!meteredModels) return "*";
+  return [...meteredModels].sort().join("\0");
+}
+
+function shouldCountUsageEntry(usageEntry, meteredModels) {
+  if (!meteredModels) return true;
+  if (meteredModels.size === 0) return false;
+  return meteredModels.has(usageEntry?.model);
+}
+
 // --- In-memory counters ---
 // Map<apiKeyValue, { hourly: { periodStart, total }, daily: { periodStart, total }, weekly: { periodStart, total } }>
 const counters = new Map();
@@ -33,22 +60,26 @@ const counters = new Map();
  * Ensure counters exist for a key and periods are current.
  * On first call or period rollover — loads from usage.json.
  */
-async function ensureCounters(apiKeyValue) {
+async function ensureCounters(apiKeyValue, keyConfig) {
   const now = new Date();
   const hourStart = getHourStart(now).getTime();
   const dayStart = getDayStart(now).getTime();
   const weekStart = getWeekStart(now).getTime();
+  const meteredModels = await getMeteredModelsForKey(keyConfig);
+  const meteredModelsKey = getMeteredModelsKey(meteredModels);
 
   let entry = counters.get(apiKeyValue);
 
-  if (!entry) {
+  if (!entry || entry.meteredModelsKey !== meteredModelsKey) {
     // First access — load all periods from file
     const [h, d, w] = await Promise.all([
-      getUsageByApiKey(apiKeyValue, new Date(hourStart)),
-      getUsageByApiKey(apiKeyValue, new Date(dayStart)),
-      getUsageByApiKey(apiKeyValue, new Date(weekStart)),
+      getUsageByApiKey(apiKeyValue, new Date(hourStart), { models: meteredModels }),
+      getUsageByApiKey(apiKeyValue, new Date(dayStart), { models: meteredModels }),
+      getUsageByApiKey(apiKeyValue, new Date(weekStart), { models: meteredModels }),
     ]);
     entry = {
+      meteredModels,
+      meteredModelsKey,
       hourly:  { periodStart: hourStart, total: h },
       daily:   { periodStart: dayStart,  total: d },
       weekly:  { periodStart: weekStart, total: w },
@@ -75,9 +106,9 @@ async function ensureCounters(apiKeyValue) {
 
   if (needReload) {
     const [h, d, w] = await Promise.all([
-      getUsageByApiKey(apiKeyValue, new Date(hourStart)),
-      getUsageByApiKey(apiKeyValue, new Date(dayStart)),
-      getUsageByApiKey(apiKeyValue, new Date(weekStart)),
+      getUsageByApiKey(apiKeyValue, new Date(hourStart), { models: entry.meteredModels }),
+      getUsageByApiKey(apiKeyValue, new Date(dayStart), { models: entry.meteredModels }),
+      getUsageByApiKey(apiKeyValue, new Date(weekStart), { models: entry.meteredModels }),
     ]);
     entry.hourly.total = h;
     entry.daily.total = d;
@@ -92,6 +123,7 @@ statsEmitter.on("update", (usageEntry) => {
   if (!usageEntry?.apiKey) return;
   const entry = counters.get(usageEntry.apiKey);
   if (!entry) return; // key not tracked yet, will load on next check
+  if (!shouldCountUsageEntry(usageEntry, entry.meteredModels)) return;
 
   const tokens = extractTokens(usageEntry);
   if (tokens === 0) return;
@@ -126,7 +158,7 @@ export async function checkKeyLimits(apiKeyValue) {
   const hasLimits = (hourly && hourly > 0) || (daily && daily > 0) || (weekly && weekly > 0);
   if (!hasLimits) return { allowed: true };
 
-  const usage = await ensureCounters(apiKeyValue);
+  const usage = await ensureCounters(apiKeyValue, keyConfig);
   const now = new Date();
 
   if (hourly && hourly > 0 && usage.hourly.total >= hourly) {
@@ -170,7 +202,7 @@ export async function getKeyUsageStats(apiKeyValue) {
   const keyConfig = await getApiKeyByValue(apiKeyValue);
   const limits = keyConfig?.limits || {};
 
-  const usage = await ensureCounters(apiKeyValue);
+  const usage = await ensureCounters(apiKeyValue, keyConfig);
 
   return {
     hourly: { used: usage.hourly.total, limit: limits.hourly || null },

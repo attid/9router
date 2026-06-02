@@ -30,22 +30,23 @@ async function loadModules() {
   process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "key-limits-"));
 
   const getApiKeyByValue = vi.fn().mockResolvedValue(null);
-  vi.doMock("../../src/lib/localDb.js", () => ({ getApiKeyByValue }));
+  const getComboByName = vi.fn().mockResolvedValue(null);
+  vi.doMock("../../src/lib/localDb.js", () => ({ getApiKeyByValue, getComboByName }));
 
   const usageDb = await import("../../src/lib/usageDb.js");
   const keyLimits = await import("../../src/sse/services/keyLimits.js");
 
   keyLimits.counters.clear();
 
-  return { ...usageDb, ...keyLimits, getApiKeyByValue };
+  return { ...usageDb, ...keyLimits, getApiKeyByValue, getComboByName };
 }
 
-async function saveUsage(saveRequestUsage, apiKey, timestamp, tokens) {
+async function saveUsage(saveRequestUsage, apiKey, timestamp, tokens, model = "test-model") {
   await saveRequestUsage({
     apiKey,
     timestamp: timestamp instanceof Date ? timestamp.toISOString() : timestamp,
     provider: "test-provider",
-    model: "test-model",
+    model,
     tokens,
   });
 }
@@ -212,6 +213,34 @@ describe("checkKeyLimits", () => {
     const result = await checkKeyLimits("sk-test");
     expect(result).toEqual({ allowed: true });
   });
+
+  it("does not count underlying usage for combo-only API keys", async () => {
+    const { saveRequestUsage, checkKeyLimits, getKeyUsageStats, getApiKeyByValue, getComboByName } = await loadModules();
+    await saveUsage(
+      saveRequestUsage,
+      "sk-test",
+      new Date(),
+      { prompt_tokens: 600, completion_tokens: 500 },
+      "moonshot/kimi-k2.5"
+    );
+    getApiKeyByValue.mockResolvedValue({
+      key: "sk-test",
+      allowedModels: ["free_kimi"],
+      limits: { hourly: 1000, daily: 0, weekly: 0 },
+    });
+    getComboByName.mockImplementation(async (name) => {
+      if (name === "free_kimi") {
+        return { name: "free_kimi", models: ["moonshot/kimi-k2.5"] };
+      }
+      return null;
+    });
+
+    const result = await checkKeyLimits("sk-test");
+    const stats = await getKeyUsageStats("sk-test");
+
+    expect(result).toEqual({ allowed: true });
+    expect(stats.hourly.used).toBe(0);
+  });
 });
 
 describe("statsEmitter increment", () => {
@@ -243,5 +272,30 @@ describe("statsEmitter increment", () => {
     });
 
     expect(counters.has("sk-unknown")).toBe(false);
+  });
+
+  it("does not increment tracked combo-only key from underlying combo model usage", async () => {
+    const { checkKeyLimits, counters, statsEmitter, getApiKeyByValue, getComboByName } = await loadModules();
+    getApiKeyByValue.mockResolvedValue({
+      key: "sk-test",
+      allowedModels: ["free_kimi"],
+      limits: { hourly: 10000, daily: 0, weekly: 0 },
+    });
+    getComboByName.mockImplementation(async (name) => {
+      if (name === "free_kimi") {
+        return { name: "free_kimi", models: ["moonshot/kimi-k2.5"] };
+      }
+      return null;
+    });
+    await checkKeyLimits("sk-test");
+
+    const entry = counters.get("sk-test");
+    statsEmitter.emit("update", {
+      apiKey: "sk-test",
+      model: "moonshot/kimi-k2.5",
+      tokens: { prompt_tokens: 100, completion_tokens: 50 },
+    });
+
+    expect(entry.hourly.total).toBe(0);
   });
 });

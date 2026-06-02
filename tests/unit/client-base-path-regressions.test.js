@@ -31,16 +31,17 @@ const cases = [
       /: `\/api\/media-providers\/tts\/voices\?provider=/,
       /const url = `\/api\/v1\/audio\/speech/,
       /fetch\(`\/api\$\{apiPathWithQuery\}`/,
-      /router\.push\(`\/dashboard\/media-providers\/\$\{kind\}`\)/,
+      /router\.push\(dashboardPath\(/,
+      /router\.replace\(dashboardPath\(/,
     ],
   },
   {
     file: "src/app/(dashboard)/dashboard/media-providers/[kind]/page.js",
-    forbidden: [/router\.push\(`\/dashboard\/media-providers\/combo\/\$\{created\.id\}`\)/],
+    forbidden: [/router\.push\(dashboardPath\(/, /router\.replace\(dashboardPath\(/],
   },
   {
     file: "src/app/(dashboard)/dashboard/media-providers/web/page.js",
-    forbidden: [/router\.push\(`\/dashboard\/media-providers\/combo\/\$\{created\.id\}`\)/],
+    forbidden: [/router\.push\(dashboardPath\(/, /router\.replace\(dashboardPath\(/],
   },
   {
     file: "src/app/(dashboard)/dashboard/usage/components/APIKeyUsageTab.js",
@@ -48,13 +49,13 @@ const cases = [
   },
   {
     file: "src/app/(dashboard)/dashboard/usage/page.js",
-    forbidden: [/router\.push\(`\/dashboard\/usage\?\$\{params\.toString\(\)\}`/],
+    forbidden: [/router\.push\(dashboardPath\(/, /router\.replace\(dashboardPath\(/],
   },
 ];
 
 describe("client base-path regressions", () => {
   for (const { file, forbidden } of cases) {
-    it(`does not keep raw root-relative API paths in ${file}`, () => {
+    it(`does not keep base-path regressions in ${file}`, () => {
       const source = fs.readFileSync(path.join(repoRoot, file), "utf8");
 
       for (const pattern of forbidden) {
