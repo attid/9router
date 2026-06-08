@@ -20,6 +20,7 @@ specific rebuild intentionally excludes one.
 | `feat/api-key-model-restrictions` | feat | Allowed-model enforcement and selector UI for API keys | n/a |
 | `feat/api-key-token-limits` | feat | API key token limits, metered usage accounting, and free combo metering behavior | n/a |
 | `feat/combo-weighted-balancing` | feat | Weighted combo model selection and routing | n/a |
+| `feat/gemini-native-output` | feat | Native Gemini output for the v1beta endpoint with function calling (Gemini CLI → OpenAI providers) | n/a |
 | `feat/kimi-coding-oauth` | feat | Kimi Coding OAuth provider, refresh flow, and dynamic models endpoint | candidate |
 | `feat/media-provider-example-fix` | feat | Media provider example-card fix | n/a |
 | `feat/usage-api-key-report` | feat | Usage report tab grouped by model/date/API key | n/a |
@@ -60,6 +61,7 @@ git reset --hard master
 git merge --no-ff feat/api-key-model-restrictions
 git merge --no-ff feat/api-key-token-limits
 git merge --no-ff feat/combo-weighted-balancing
+git merge --no-ff feat/gemini-native-output
 git merge --no-ff feat/kimi-coding-oauth
 git merge --no-ff feat/media-provider-example-fix
 git merge --no-ff feat/usage-api-key-report
