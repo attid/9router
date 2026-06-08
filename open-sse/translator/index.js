@@ -45,6 +45,7 @@ function ensureInitialized() {
   // Response translators
   require("./response/claude-to-openai.js");
   require("./response/openai-to-claude.js");
+  require("./response/openai-to-gemini.js");
   require("./response/gemini-to-openai.js");
   require("./response/openai-to-antigravity.js");
   require("./response/openai-responses.js");
