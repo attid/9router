@@ -1,7 +1,9 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
+import { getApiKeyByValue, getProviderConnections, updateProviderConnection, getSettings } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { errorResponse } from "open-sse/utils/error.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 
@@ -300,13 +302,58 @@ export function extractApiKey(request) {
     return xApiKey;
   }
 
-  return null;
+  // Gemini clients use either x-goog-api-key or ?key= on native routes.
+  const googleApiKey = request.headers.get("x-goog-api-key");
+  if (googleApiKey) {
+    return googleApiKey;
+  }
+
+  try {
+    return new URL(request.url).searchParams.get("key");
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Validate API key (optional - for local use can skip)
+ * Authenticate an API request and enforce its request-facing model allowlist.
+ * The model is intentionally checked before alias/combo/provider resolution.
  */
-export async function isValidApiKey(apiKey) {
-  if (!apiKey) return false;
-  return await validateApiKey(apiKey);
+export async function authorizeModelRequest(request, { model, settings } = {}) {
+  const apiKey = extractApiKey(request);
+
+  if (!apiKey) {
+    return {
+      apiKey: null,
+      response: settings?.requireApiKey
+        ? errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key")
+        : null,
+    };
+  }
+
+  const keyConfig = await getApiKeyByValue(apiKey);
+  const isAuthenticated = keyConfig?.isActive === true;
+
+  if (!isAuthenticated) {
+    return {
+      apiKey,
+      response: settings?.requireApiKey
+        ? errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key")
+        : null,
+    };
+  }
+
+  const allowedModels = keyConfig.allowedModels;
+  if (Array.isArray(allowedModels) && allowedModels.length > 0 && !allowedModels.includes(model)) {
+    log.warn("AUTH", `Model "${model}" not allowed for key ${log.maskKey(apiKey)}`);
+    return {
+      apiKey,
+      response: errorResponse(
+        HTTP_STATUS.FORBIDDEN,
+        `Model "${model}" is not allowed for this API key`
+      ),
+    };
+  }
+
+  return { apiKey, response: null };
 }

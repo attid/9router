@@ -35,8 +35,9 @@ export async function getApiKeyById(id) {
   return rowToKey(row);
 }
 
-export async function createApiKey(name, machineId, allowedModels = null) {
+export async function createApiKey(name, machineId, options = {}) {
   if (!machineId) throw new Error("machineId is required");
+  const { allowedModels = null } = options;
   const db = await getAdapter();
   const { generateApiKeyWithMachine } = await import("@/shared/utils/apiKey");
   const result = generateApiKeyWithMachine(machineId);

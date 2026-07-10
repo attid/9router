@@ -28,6 +28,7 @@ export default function APIPageClient({ machineId }) {
   const [confirmState, setConfirmState] = useState(null);
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [modelSelectTarget, setModelSelectTarget] = useState(null);
+  const [existingKeyModelsDraft, setExistingKeyModelsDraft] = useState([]);
   const [activeProviders, setActiveProviders] = useState([]);
   const [modelAliases, setModelAliases] = useState({});
 
@@ -697,7 +698,7 @@ export default function APIPageClient({ machineId }) {
 
   const selectedAllowedModels = modelSelectTarget === "create"
     ? newKeyModels
-    : keys.find((key) => key.id === modelSelectTarget)?.allowedModels || [];
+    : existingKeyModelsDraft;
 
   const updateAllowedModels = async (keyId, models) => {
     const allowedModels = models.length > 0 ? models : null;
@@ -722,17 +723,31 @@ export default function APIPageClient({ machineId }) {
 
   const handleSelectAllowedModel = (model) => {
     if (model?.isPlaceholder) return;
-    const value = model?.value || model?.name || model;
-    const next = [...new Set([...selectedAllowedModels, value])];
-    if (modelSelectTarget === "create") setNewKeyModels(next);
-    else if (modelSelectTarget) updateAllowedModels(modelSelectTarget, next);
+    const value = model?.requestValue || model?.value || model?.name || model;
+    const addModel = (models) => [...new Set([...models, value])];
+    if (modelSelectTarget === "create") setNewKeyModels(addModel);
+    else if (modelSelectTarget) setExistingKeyModelsDraft(addModel);
   };
 
   const handleDeselectAllowedModel = (model) => {
-    const value = model?.value || model?.name || model;
-    const next = selectedAllowedModels.filter((item) => item !== value);
-    if (modelSelectTarget === "create") setNewKeyModels(next);
-    else if (modelSelectTarget) updateAllowedModels(modelSelectTarget, next);
+    const value = model?.requestValue || model?.value || model?.name || model;
+    const removeModel = (models) => models.filter((item) => item !== value);
+    if (modelSelectTarget === "create") setNewKeyModels(removeModel);
+    else if (modelSelectTarget) setExistingKeyModelsDraft(removeModel);
+  };
+
+  const handleCloseModelSelect = async () => {
+    const target = modelSelectTarget;
+    const draft = existingKeyModelsDraft;
+    setShowModelSelect(false);
+    setModelSelectTarget(null);
+    setExistingKeyModelsDraft([]);
+
+    if (target && target !== "create") {
+      const saved = keys.find((key) => key.id === target)?.allowedModels || [];
+      const unchanged = saved.length === draft.length && saved.every((model, index) => model === draft[index]);
+      if (!unchanged) await updateAllowedModels(target, draft);
+    }
   };
 
   const maskKey = (fullKey) => {
@@ -1117,6 +1132,7 @@ export default function APIPageClient({ machineId }) {
                   <button
                     onClick={() => {
                       setModelSelectTarget(key.id);
+                      setExistingKeyModelsDraft([...(key.allowedModels || [])]);
                       setShowModelSelect(true);
                     }}
                     className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
@@ -1411,16 +1427,14 @@ export default function APIPageClient({ machineId }) {
 
       <ModelSelectModal
         isOpen={showModelSelect}
-        onClose={() => {
-          setShowModelSelect(false);
-          setModelSelectTarget(null);
-        }}
+        onClose={handleCloseModelSelect}
         onSelect={handleSelectAllowedModel}
         onDeselect={handleDeselectAllowedModel}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
         addedModelValues={selectedAllowedModels}
         closeOnSelect={false}
+        useRequestFacingValues
         title={modelSelectTarget === "create" ? "Allowed models for new key" : "Allowed models"}
       />
 

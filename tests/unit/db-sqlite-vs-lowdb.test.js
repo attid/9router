@@ -66,10 +66,9 @@ describe("DB SQLite layer — public API parity", () => {
   });
 
   it("apiKeys: persists, looks up, updates, and clears allowed models", async () => {
-    const k = await sqliteDb.createApiKey("restricted-key", "machine-models", [
-      "openai/gpt-5",
-      "production-combo",
-    ]);
+    const k = await sqliteDb.createApiKey("restricted-key", "machine-models", {
+      allowedModels: ["openai/gpt-5", "production-combo"],
+    });
 
     expect(k.allowedModels).toEqual(["openai/gpt-5", "production-combo"]);
     expect((await sqliteDb.getApiKeyById(k.id)).allowedModels).toEqual([
@@ -268,7 +267,9 @@ describe("DB SQLite layer — public API parity", () => {
   });
 
   it("exportDb / importDb preserves API-key allowed models", async () => {
-    const key = await sqliteDb.createApiKey("exported-restrictions", "machine-export", ["openai/gpt-5"]);
+    const key = await sqliteDb.createApiKey("exported-restrictions", "machine-export", {
+      allowedModels: ["openai/gpt-5"],
+    });
     const snapshot = await sqliteDb.exportDb();
 
     expect(snapshot.apiKeys.find((item) => item.id === key.id)?.allowedModels).toEqual(["openai/gpt-5"]);

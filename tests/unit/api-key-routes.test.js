@@ -40,12 +40,12 @@ describe("API key allowedModels routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getConsistentMachineId.mockResolvedValue("machine-1");
-    mocks.createApiKey.mockImplementation(async (name, machineId, allowedModels) => ({
+    mocks.createApiKey.mockImplementation(async (name, machineId, options = {}) => ({
       id: "key-1",
       key: "sk-created",
       name,
       machineId,
-      allowedModels,
+      allowedModels: options.allowedModels,
     }));
     mocks.getApiKeyById.mockResolvedValue({ id: "key-1", key: "sk-created", isActive: true });
     mocks.updateApiKey.mockImplementation(async (id, data) => ({ id, ...data }));
@@ -61,7 +61,7 @@ describe("API key allowedModels routes", () => {
     expect(mocks.createApiKey).toHaveBeenCalledWith(
       "Production",
       "machine-1",
-      ["openai/gpt-5", "production-combo"]
+      { allowedModels: ["openai/gpt-5", "production-combo"] }
     );
     expect(response.body.allowedModels).toEqual(["openai/gpt-5", "production-combo"]);
   });
@@ -82,7 +82,7 @@ describe("API key allowedModels routes", () => {
     const response = await POST(jsonRequest({ name: "Unrestricted", allowedModels }));
 
     expect(response.status).toBe(201);
-    expect(mocks.createApiKey).toHaveBeenCalledWith("Unrestricted", "machine-1", null);
+    expect(mocks.createApiKey).toHaveBeenCalledWith("Unrestricted", "machine-1", { allowedModels: null });
     expect(response.body.allowedModels).toBeNull();
   });
 

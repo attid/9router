@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
-  getApiKeyByValue: vi.fn(),
+  authorizeModelRequest: vi.fn(),
   getComboModels: vi.fn(),
   getModelInfo: vi.fn(),
   handleComboChat: vi.fn(),
@@ -12,14 +12,13 @@ const mocks = vi.hoisted(() => ({
 vi.mock("open-sse/index.js", () => ({}));
 vi.mock("@/lib/localDb", () => ({
   getSettings: mocks.getSettings,
-  getApiKeyByValue: mocks.getApiKeyByValue,
 }));
 vi.mock("../../src/sse/services/auth.js", () => ({
   getProviderCredentials: vi.fn(),
   markAccountUnavailable: vi.fn(),
   clearAccountError: vi.fn(),
   extractApiKey: (request) => request.headers.get("authorization")?.replace(/^Bearer /, "") || null,
-  isValidApiKey: vi.fn(async () => true),
+  authorizeModelRequest: mocks.authorizeModelRequest,
 }));
 vi.mock("open-sse/utils/claudeHeaderCache.js", () => ({ cacheClaudeHeaders: vi.fn() }));
 vi.mock("../../src/sse/services/model.js", () => ({
@@ -55,15 +54,17 @@ describe("API-key model enforcement", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getSettings.mockResolvedValue({ requireApiKey: true, comboStrategy: "fallback" });
+    mocks.authorizeModelRequest.mockResolvedValue({ apiKey: "sk-restricted", response: null });
     mocks.getComboModels.mockResolvedValue(["openai/gpt-5"]);
     mocks.handleComboChat.mockResolvedValue(new Response("ok", { status: 200 }));
   });
 
   it("rejects a disallowed requested model before combo or provider routing", async () => {
-    mocks.getApiKeyByValue.mockResolvedValue({
-      key: "sk-restricted",
-      isActive: true,
-      allowedModels: ["allowed-combo"],
+    mocks.authorizeModelRequest.mockResolvedValue({
+      apiKey: "sk-restricted",
+      response: new Response(JSON.stringify({
+        error: { message: 'Model "blocked-combo" is not allowed for this API key' },
+      }), { status: 403, headers: { "content-type": "application/json" } }),
     });
 
     const response = await handleChat(chatRequest("blocked-combo"));
@@ -77,12 +78,6 @@ describe("API-key model enforcement", () => {
   });
 
   it("routes an explicitly allowed requested model", async () => {
-    mocks.getApiKeyByValue.mockResolvedValue({
-      key: "sk-restricted",
-      isActive: true,
-      allowedModels: ["allowed-combo"],
-    });
-
     const response = await handleChat(chatRequest("allowed-combo"));
 
     expect(response.status).toBe(200);
@@ -91,8 +86,6 @@ describe("API-key model enforcement", () => {
   });
 
   it.each([null, []])("routes a model when the key allowlist is %j", async (allowedModels) => {
-    mocks.getApiKeyByValue.mockResolvedValue({ key: "sk-unrestricted", isActive: true, allowedModels });
-
     const response = await handleChat(chatRequest("any-combo", "sk-unrestricted"));
 
     expect(response.status).toBe(200);
