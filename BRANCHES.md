@@ -18,6 +18,7 @@ This file lives on `local/meta` and is merged into `deploy`. Do not put it on
 | `feat/api-key-token-limits` | feature | Calendar token limits and free-combo metering; reports include free usage while limits exclude it. |
 | `feat/api-key-management` | feature | API key rename, deterministic sorting, and filtering. |
 | `feat/combo-weighted-balancing` | feature | Weighted combo members with fallback-only weight zero. |
+| `feat/gemini-native-output` | feature | Native Gemini request/response translation with tool calling while preserving upstream TTS handling. |
 | `feat/usage-api-key-report` | feature | Masked API-key usage report with distinct key aggregation and cached-token totals. |
 | `local/request-details` | local | SQLite Request Details metadata, bounded stream traces, and streamed export. |
 | `local/debug-chat-test` | local | Chat Test page without a hard response timeout. |
@@ -33,7 +34,7 @@ These historical overlays are not part of `deploy`:
 | Old branch | Replacement |
 |---|---|
 | `feat/kimi-coding-oauth` | Upstream Kimi implementation. |
-| `feat/gemini-native-output` | Upstream Gemini native output/tool-call support. |
+| `legacy/gemini-native-output` | Rebuilt `feat/gemini-native-output` on stable `v0.5.20`. |
 | `feat/media-provider-example-fix` | Current upstream media pages plus `local/base-path`. |
 | `local/db-lock-fix` | Upstream SQLite implementation. |
 | `local/client-subpath-glue` | Rebuilt `local/base-path`. |
@@ -53,6 +54,7 @@ git merge --no-ff feat/api-key-model-restrictions
 git merge --no-ff feat/api-key-token-limits
 git merge --no-ff feat/api-key-management
 git merge --no-ff feat/combo-weighted-balancing
+git merge --no-ff feat/gemini-native-output
 git merge --no-ff feat/usage-api-key-report
 git merge --no-ff local/request-details
 git merge --no-ff local/debug-chat-test
