@@ -40,6 +40,10 @@ export async function PUT(request, { params }) {
         return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
       }
     }
+
+    if (Object.hasOwn(body, "isFree")) {
+      body.isFree = body.isFree === true;
+    }
     
     // Capture previous name to invalidate rotation state on rename
     const prev = await getComboById(id);

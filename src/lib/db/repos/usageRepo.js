@@ -249,6 +249,9 @@ export async function saveRequestUsage(entry) {
     const tokens = entry.tokens || {};
     const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
     const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
+    const meta = {};
+    if (entry.requestedModel) meta.requestedModel = entry.requestedModel;
+    if (entry.metered !== undefined) meta.metered = entry.metered;
 
     let inserted = false;
 
@@ -285,7 +288,7 @@ export async function saveRequestUsage(entry) {
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
+          stringifyJson(tokens), stringifyJson(meta),
         ]
       );
 
@@ -307,11 +310,37 @@ export async function saveRequestUsage(entry) {
 
     if (inserted) {
       pushToRing(entry);
+      statsEmitter.emit("usage", entry);
       scheduleStatsEvent("update", 250);
     }
   } catch (e) {
     console.error("Failed to save usage stats:", e);
   }
+}
+
+export async function getUsageByApiKey(apiKey, since, options = {}) {
+  const db = await getAdapter();
+  const conditions = ["apiKey = ?"];
+  const params = [apiKey];
+
+  if (since) {
+    conditions.push("timestamp >= ?");
+    params.push(since instanceof Date ? since.toISOString() : new Date(since).toISOString());
+  }
+
+  const rows = db.all(
+    `SELECT promptTokens, completionTokens, tokens, meta FROM usageHistory WHERE ${conditions.join(" AND ")}`,
+    params,
+  );
+
+  return rows.reduce((total, row) => {
+    const meta = parseJson(row.meta, {}) || {};
+    if (options.meteredOnly && meta.metered === false) return total;
+    const tokens = parseJson(row.tokens, {}) || {};
+    const promptTokens = row.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0;
+    const completionTokens = row.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0;
+    return total + promptTokens + completionTokens;
+  }, 0);
 }
 
 export async function getUsageHistory(filter = {}) {

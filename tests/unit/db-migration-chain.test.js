@@ -83,6 +83,51 @@ describe("Schema migrations", () => {
     expect(aliases).toHaveLength(1);
   });
 
+  it("preserves legacy key limits, free combos, and unmetered usage metadata", async () => {
+    const timestamp = new Date().toISOString();
+    fs.writeFileSync(path.join(tempDir, "db.json"), JSON.stringify({
+      apiKeys: [{
+        id: "limited-key",
+        key: "sk-legacy-limited",
+        name: "limited",
+        limits: { hourly: 100, daily: 1_000, weekly: 5_000 },
+        createdAt: timestamp,
+      }],
+      combos: [{
+        id: "free-combo",
+        name: "free_legacy",
+        models: ["openai/gpt-test"],
+        isFree: true,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }],
+    }));
+    fs.writeFileSync(path.join(tempDir, "usage.json"), JSON.stringify({
+      history: [{
+        timestamp,
+        provider: "openai",
+        model: "gpt-test",
+        apiKey: "sk-legacy-limited",
+        requestedModel: "free_legacy",
+        metered: false,
+        tokens: { prompt_tokens: 20, completion_tokens: 10, cached_tokens: 5 },
+      }],
+    }));
+
+    const db = await (await import("@/lib/db/driver.js")).getAdapter();
+
+    expect(JSON.parse(db.get("SELECT limits FROM apiKeys WHERE id = 'limited-key'").limits)).toEqual({
+      hourly: 100,
+      daily: 1_000,
+      weekly: 5_000,
+    });
+    expect(db.get("SELECT isFree FROM combos WHERE id = 'free-combo'").isFree).toBe(1);
+    expect(JSON.parse(db.get("SELECT meta FROM usageHistory LIMIT 1").meta)).toEqual({
+      requestedModel: "free_legacy",
+      metered: false,
+    });
+  });
+
   it("auto-sync re-creates missing index when DB lacks it", async () => {
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();

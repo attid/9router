@@ -17,11 +17,30 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
+
+function LimitProgressBar({ used = 0, limit, label }) {
+  if (!limit) return null;
+  const pct = Math.min((used / limit) * 100, 100);
+  const color = pct > 90 ? "bg-red-500" : pct > 75 ? "bg-yellow-500" : "bg-emerald-500";
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center justify-between text-xs text-text-muted">
+        <span>{label}</span>
+        <span>{used.toLocaleString()} / {limit.toLocaleString()}</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-black/5 dark:bg-white/5">
+        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyLimits, setNewKeyLimits] = useState({ hourly: "", daily: "", weekly: "" });
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
 
@@ -76,6 +95,9 @@ export default function APIPageClient({ machineId }) {
 
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
+  const [keyUsage, setKeyUsage] = useState({});
+  const [editingLimits, setEditingLimits] = useState(null);
+  const [editLimitsValues, setEditLimitsValues] = useState({ hourly: "", daily: "", weekly: "" });
 
   // Client-side local/remote detection (UI hint only, not a security gate)
   const [isRemoteHost, setIsRemoteHost] = useState(false);
@@ -266,6 +288,33 @@ export default function APIPageClient({ machineId }) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (keys.length === 0) {
+      setKeyUsage({});
+      return undefined;
+    }
+    let cancelled = false;
+    const fetchUsage = async () => {
+      const entries = await Promise.all(keys.map(async (key) => {
+        try {
+          const response = await fetch(`/api/keys/${key.id}/usage`);
+          if (!response.ok) return [key.id, null];
+          const data = await response.json();
+          return [key.id, data.usage || null];
+        } catch {
+          return [key.id, null];
+        }
+      }));
+      if (!cancelled) setKeyUsage(Object.fromEntries(entries.filter(([, usage]) => usage)));
+    };
+    fetchUsage();
+    const interval = setInterval(fetchUsage, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [keys]);
 
   // u2500u2500u2500 Cloudflare Tunnel handlers
   // Ping tunnel health until reachable. Race multiple URLs (shortlink + direct) — 1 OK is enough.
@@ -610,11 +659,17 @@ export default function APIPageClient({ machineId }) {
   const handleCreateKey = async () => {
     if (!newKeyName.trim()) return;
 
+    const limits = Object.fromEntries(
+      Object.entries(newKeyLimits)
+        .filter(([, value]) => value !== "")
+        .map(([period, value]) => [period, Number(value)]),
+    );
+
     try {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({ name: newKeyName, ...(Object.keys(limits).length ? { limits } : {}) }),
       });
       const data = await res.json();
 
@@ -622,6 +677,7 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewKeyLimits({ hourly: "", daily: "", weekly: "" });
         setShowAddModal(false);
       }
     } catch (error) {
@@ -664,6 +720,25 @@ export default function APIPageClient({ machineId }) {
       }
     } catch (error) {
       console.log("Error toggling key:", error);
+    }
+  };
+
+  const handleSaveLimits = async (keyId) => {
+    const limits = Object.fromEntries(
+      Object.entries(editLimitsValues).map(([period, value]) => [period, value === "" ? null : Number(value)]),
+    );
+    try {
+      const response = await fetch(`/api/keys/${keyId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limits }),
+      });
+      if (response.ok) {
+        await fetchData();
+        setEditingLimits(null);
+      }
+    } catch (error) {
+      console.log("Error saving limits:", error);
     }
   };
 
@@ -1027,8 +1102,55 @@ export default function APIPageClient({ machineId }) {
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
+                  {(key.limits?.hourly || key.limits?.daily || key.limits?.weekly) && editingLimits !== key.id && (
+                    <div className="mt-2 flex max-w-md flex-col gap-1">
+                      <LimitProgressBar used={keyUsage[key.id]?.hourly?.used} limit={key.limits.hourly} label="Hourly" />
+                      <LimitProgressBar used={keyUsage[key.id]?.daily?.used} limit={key.limits.daily} label="Daily" />
+                      <LimitProgressBar used={keyUsage[key.id]?.weekly?.used} limit={key.limits.weekly} label="Weekly" />
+                    </div>
+                  )}
+                  {editingLimits === key.id && (
+                    <div className="mt-2 flex max-w-xl flex-col gap-2 rounded bg-black/[0.02] p-2 dark:bg-white/[0.02]">
+                      <p className="text-xs font-medium">Token Limits</p>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        {(["hourly", "daily", "weekly"]).map((period) => (
+                          <Input
+                            key={period}
+                            label={period[0].toUpperCase() + period.slice(1)}
+                            type="number"
+                            min="1"
+                            value={editLimitsValues[period]}
+                            onChange={(event) => setEditLimitsValues((current) => ({ ...current, [period]: event.target.value }))}
+                            placeholder="Unlimited"
+                          />
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={() => handleSaveLimits(key.id)}>Save</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingLimits(null)}>Cancel</Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      if (editingLimits === key.id) {
+                        setEditingLimits(null);
+                        return;
+                      }
+                      setEditLimitsValues({
+                        hourly: key.limits?.hourly || "",
+                        daily: key.limits?.daily || "",
+                        weekly: key.limits?.weekly || "",
+                      });
+                      setEditingLimits(key.id);
+                    }}
+                    className="p-2 text-text-muted transition-all hover:rounded hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
+                    title="Edit token limits"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">tune</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1068,6 +1190,7 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewKeyLimits({ hourly: "", daily: "", weekly: "" });
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1077,6 +1200,24 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+          <div className="border-t border-border pt-3">
+            <p className="mb-2 text-sm font-medium">
+              Token Limits <span className="font-normal text-text-muted">(optional)</span>
+            </p>
+            <div className="flex flex-col gap-2">
+              {(["hourly", "daily", "weekly"]).map((period) => (
+                <Input
+                  key={period}
+                  label={`${period[0].toUpperCase() + period.slice(1)} limit`}
+                  type="number"
+                  min="1"
+                  value={newKeyLimits[period]}
+                  onChange={(event) => setNewKeyLimits((current) => ({ ...current, [period]: event.target.value }))}
+                  placeholder="Unlimited"
+                />
+              ))}
+            </div>
+          </div>
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
@@ -1085,6 +1226,7 @@ export default function APIPageClient({ machineId }) {
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+                setNewKeyLimits({ hourly: "", daily: "", weekly: "" });
               }}
               variant="ghost"
               fullWidth

@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
+import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
 function rowToKey(row) {
   if (!row) return null;
@@ -8,6 +9,7 @@ function rowToKey(row) {
     key: row.key,
     name: row.name,
     machineId: row.machineId,
+    limits: parseJson(row.limits, null),
     isActive: row.isActive === 1 || row.isActive === true,
     createdAt: row.createdAt,
   };
@@ -25,7 +27,22 @@ export async function getApiKeyById(id) {
   return rowToKey(row);
 }
 
-export async function createApiKey(name, machineId) {
+function normalizeLimitValue(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null;
+}
+
+function normalizeLimits(limits, existing = {}) {
+  if (!limits) return null;
+  return {
+    hourly: Object.hasOwn(limits, "hourly") ? normalizeLimitValue(limits.hourly) : existing.hourly ?? null,
+    daily: Object.hasOwn(limits, "daily") ? normalizeLimitValue(limits.daily) : existing.daily ?? null,
+    weekly: Object.hasOwn(limits, "weekly") ? normalizeLimitValue(limits.weekly) : existing.weekly ?? null,
+  };
+}
+
+export async function createApiKey(name, machineId, limits = null) {
   if (!machineId) throw new Error("machineId is required");
   const db = await getAdapter();
   const { generateApiKeyWithMachine } = await import("@/shared/utils/apiKey");
@@ -35,12 +52,13 @@ export async function createApiKey(name, machineId) {
     name,
     key: result.key,
     machineId,
+    limits: normalizeLimits(limits),
     isActive: true,
     createdAt: new Date().toISOString(),
   };
   db.run(
-    `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
-    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt]
+    `INSERT INTO apiKeys(id, key, name, machineId, limits, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, stringifyJson(apiKey.limits), 1, apiKey.createdAt]
   );
   return apiKey;
 }
@@ -51,10 +69,17 @@ export async function updateApiKey(id, data) {
   db.transaction(() => {
     const row = db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
     if (!row) return;
-    const merged = { ...rowToKey(row), ...data };
+    const current = rowToKey(row);
+    const merged = {
+      ...current,
+      ...data,
+      limits: Object.hasOwn(data, "limits")
+        ? normalizeLimits(data.limits, current.limits || {})
+        : current.limits,
+    };
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, limits = ?, isActive = ? WHERE id = ?`,
+      [merged.key, merged.name, merged.machineId, stringifyJson(merged.limits), merged.isActive ? 1 : 0, id]
     );
     result = merged;
   });
@@ -72,4 +97,9 @@ export async function validateApiKey(key) {
   const row = db.get(`SELECT isActive FROM apiKeys WHERE key = ?`, [key]);
   if (!row) return false;
   return row.isActive === 1 || row.isActive === true;
+}
+
+export async function getApiKeyByValue(key) {
+  const db = await getAdapter();
+  return rowToKey(db.get(`SELECT * FROM apiKeys WHERE key = ?`, [key]));
 }
