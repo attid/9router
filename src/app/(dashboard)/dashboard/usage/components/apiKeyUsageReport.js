@@ -3,25 +3,25 @@ export function buildApiKeyUsageRows(stats, filters = {}) {
   const entries = Object.values(stats?.byApiKey || {});
 
   return entries
-    .map((entry) => {
+    .map((entry, index) => {
       const promptTokens = entry.promptTokens || 0;
       const completionTokens = entry.completionTokens || 0;
+      const cachedTokens = entry.cachedTokens || 0;
       const apiKeyMasked = entry.apiKeyMasked || null;
-      const apiKeyKey = apiKeyMasked || "local-no-key";
       const keyName = entry.keyName || apiKeyMasked || "Local (No API Key)";
       const model = entry.rawModel || "unknown";
       const provider = entry.provider || "unknown";
 
       return {
-        id: `${apiKeyKey}|${model}|${provider}`,
+        id: `${index}|${model}|${provider}`,
         apiKeyMasked,
-        apiKeyKey,
         keyName,
         model,
         provider,
         requests: entry.requests || 0,
         promptTokens,
         completionTokens,
+        cachedTokens,
         totalTokens: promptTokens + completionTokens,
         cost: entry.cost || 0,
         lastUsed: entry.lastUsed || null,

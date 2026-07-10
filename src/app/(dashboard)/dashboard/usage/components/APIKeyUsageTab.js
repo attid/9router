@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Card from "@/shared/components/Card";
 import { buildApiKeyUsageRows } from "./apiKeyUsageReport";
 
@@ -35,32 +35,41 @@ export default function APIKeyUsageTab({ period }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchStats = useCallback(async () => {
+  useEffect(() => {
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
-    try {
-      const response = await fetch(`/api/usage/stats?period=${encodeURIComponent(period)}`);
-      if (!response.ok) throw new Error(`Failed to load usage stats (${response.status})`);
-      setStats(await response.json());
-    } catch (fetchError) {
-      setError(fetchError.message || "Failed to load usage stats");
-    } finally {
-      setLoading(false);
-    }
-  }, [period]);
 
-  useEffect(() => {
+    async function fetchStats() {
+      try {
+        const response = await fetch(`/api/usage/stats?period=${encodeURIComponent(period)}`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`Failed to load usage stats (${response.status})`);
+        const data = await response.json();
+        if (!controller.signal.aborted) setStats(data);
+      } catch (fetchError) {
+        if (!controller.signal.aborted) {
+          setError(fetchError.message || "Failed to load usage stats");
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }
+
     fetchStats();
-  }, [fetchStats]);
+    return () => controller.abort();
+  }, [period]);
 
   const rows = useMemo(() => buildApiKeyUsageRows(stats, { query }), [stats, query]);
   const totals = useMemo(() => rows.reduce((acc, row) => ({
     requests: acc.requests + row.requests,
     promptTokens: acc.promptTokens + row.promptTokens,
     completionTokens: acc.completionTokens + row.completionTokens,
+    cachedTokens: acc.cachedTokens + row.cachedTokens,
     totalTokens: acc.totalTokens + row.totalTokens,
     cost: acc.cost + row.cost,
-  }), { requests: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0 }), [rows]);
+  }), { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, totalTokens: 0, cost: 0 }), [rows]);
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -85,10 +94,11 @@ export default function APIKeyUsageTab({ period }) {
           </label>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
           <Metric label="Requests" value={fmt(totals.requests)} />
           <Metric label="Input" value={fmt(totals.promptTokens)} />
           <Metric label="Output" value={fmt(totals.completionTokens)} />
+          <Metric label="Cached" value={fmt(totals.cachedTokens)} />
           <Metric label="Total Tokens" value={fmt(totals.totalTokens)} />
           <Metric label="Est. Cost" value={fmtCost(totals.cost)} />
         </div>
@@ -105,6 +115,7 @@ export default function APIKeyUsageTab({ period }) {
                 <th className="px-4 py-3 text-right">Requests</th>
                 <th className="px-4 py-3 text-right">Input</th>
                 <th className="px-4 py-3 text-right">Output</th>
+                <th className="px-4 py-3 text-right">Cached</th>
                 <th className="px-4 py-3 text-right">Total</th>
                 <th className="px-4 py-3 text-right">Cost</th>
                 <th className="px-4 py-3">Last Used</th>
@@ -113,17 +124,17 @@ export default function APIKeyUsageTab({ period }) {
             <tbody className="divide-y divide-border">
               {loading && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-text-muted">Loading...</td>
+                  <td colSpan={10} className="px-4 py-10 text-center text-text-muted">Loading...</td>
                 </tr>
               )}
               {!loading && error && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-danger">{error}</td>
+                  <td colSpan={10} className="px-4 py-10 text-center text-danger">{error}</td>
                 </tr>
               )}
               {!loading && !error && rows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-text-muted">
+                  <td colSpan={10} className="px-4 py-10 text-center text-text-muted">
                     No API-key usage found for this period or filter.
                   </td>
                 </tr>
@@ -141,6 +152,7 @@ export default function APIKeyUsageTab({ period }) {
                   <td className="px-4 py-3 text-right">{fmt(row.requests)}</td>
                   <td className="px-4 py-3 text-right text-text-muted">{fmt(row.promptTokens)}</td>
                   <td className="px-4 py-3 text-right text-text-muted">{fmt(row.completionTokens)}</td>
+                  <td className="px-4 py-3 text-right text-text-muted">{fmt(row.cachedTokens)}</td>
                   <td className="px-4 py-3 text-right font-semibold">{fmt(row.totalTokens)}</td>
                   <td className="px-4 py-3 text-right text-warning">{fmtCost(row.cost)}</td>
                   <td className="px-4 py-3 text-text-muted">{fmtLastUsed(row.lastUsed)}</td>

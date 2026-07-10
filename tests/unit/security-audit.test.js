@@ -48,28 +48,27 @@ describe("AUDIT-002: API key masking", () => {
     expect(livePath.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("byApiKey object keys should use masked key, not raw key", () => {
+  it("byApiKey aggregation should not use masked or raw keys as identity", () => {
     const source = fs.readFileSync(
       path.resolve("src/lib/db/repos/usageRepo.js"),
       "utf-8"
     );
-    // The 24h path should use apiKeyMasked in the akKey template
-    expect(source).toContain("${apiKeyMasked}|${r.model}|${r.provider");
-    // Should NOT use raw r.apiKey in the key
+    expect(source).toContain("function getApiKeyAggregationId");
+    expect(source).toContain("keyInfo?.id");
+    expect(source).toContain('createHash("sha256")');
+    expect(source).not.toContain("${apiKeyMasked}|${r.model}|${r.provider");
     expect(source).not.toContain("${r.apiKey}|${r.model}|${r.provider");
   });
 
-  it("daily summaries and their timestamp overlay should be indexed by the masked key", () => {
+  it("strips server-only API key identifiers from the response", () => {
     const source = fs.readFileSync(
       path.resolve("src/lib/db/repos/usageRepo.js"),
       "utf-8"
     );
 
-    expect(source).toContain("const statsApiKey = `${apiKeyKey}|${rawModel}|${provider || \"unknown\"}`");
-    expect(source).toContain("stats.byApiKey[statsApiKey]");
-    expect(source).toContain("`${maskApiKey(e.apiKey)}|${e.model}|${e.provider || \"unknown\"}`");
-    expect(source).toContain("`local-no-key|${r.model}|${r.provider || \"unknown\"}`");
-    expect(source).not.toContain("? `${e.apiKey}|${e.model}|${e.provider || \"unknown\"}`");
+    expect(source).toContain("sanitizeApiKeyStats");
+    expect(source).toContain("delete entry.apiKeyId");
+    expect(source).toContain("stats.byApiKey = sanitizeApiKeyStats(stats.byApiKey)");
   });
 });
 

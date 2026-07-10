@@ -1,4 +1,5 @@
 import { EventEmitter } from "events";
+import { createHash } from "crypto";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
@@ -7,6 +8,24 @@ function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
   if (key.length <= 8) return key.charAt(0) + "***";
   return key.slice(0, 8) + "***";
+}
+
+function getApiKeyAggregationId(apiKey, keyInfo = null) {
+  if (!apiKey || typeof apiKey !== "string") return "local-no-key";
+  if (keyInfo?.id) return `id:${keyInfo.id}`;
+  return `sha256:${createHash("sha256").update(apiKey).digest("hex")}`;
+}
+
+function sanitizeApiKeyStats(byApiKey) {
+  const sanitized = {};
+  Object.values(byApiKey).forEach((value, index) => {
+    const entry = { ...value };
+    delete entry.apiKey;
+    delete entry.apiKeyId;
+    delete entry.apiKeyKey;
+    sanitized[index] = entry;
+  });
+  return sanitized;
 }
 
 const PENDING_TIMEOUT_MS = 60 * 1000;
@@ -88,9 +107,18 @@ function aggregateEntryToDay(day, entry) {
     addToCounter(day.byAccount, entry.connectionId, { ...vals, meta: { rawModel: entry.model, provider: entry.provider } });
   }
 
-  const apiKeyVal = entry.apiKey && typeof entry.apiKey === "string" ? entry.apiKey : "local-no-key";
-  const akModelKey = `${apiKeyVal}|${entry.model}|${entry.provider || "unknown"}`;
-  addToCounter(day.byApiKey, akModelKey, { ...vals, meta: { rawModel: entry.model, provider: entry.provider, apiKey: entry.apiKey || null } });
+  const apiKeyId = entry.apiKeyId || getApiKeyAggregationId(entry.apiKey);
+  const akModelKey = `${apiKeyId}|${entry.model}|${entry.provider || "unknown"}`;
+  addToCounter(day.byApiKey, akModelKey, {
+    ...vals,
+    meta: {
+      rawModel: entry.model,
+      provider: entry.provider,
+      apiKeyId,
+      apiKeyMasked: entry.apiKeyMasked || maskApiKey(entry.apiKey),
+      keyName: entry.apiKeyName || (entry.apiKey ? maskApiKey(entry.apiKey) : "Local (No API Key)"),
+    },
+  });
 
   const endpoint = entry.endpoint || "Unknown";
   const epKey = `${endpoint}|${entry.model}|${entry.provider || "unknown"}`;
@@ -249,6 +277,15 @@ export async function saveRequestUsage(entry) {
     const tokens = entry.tokens || {};
     const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
     const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
+    const apiKeyInfo = entry.apiKey && typeof entry.apiKey === "string"
+      ? db.get(`SELECT id, name FROM apiKeys WHERE key = ?`, [entry.apiKey])
+      : null;
+    const dailyEntry = {
+      ...entry,
+      apiKeyId: getApiKeyAggregationId(entry.apiKey, apiKeyInfo),
+      apiKeyMasked: maskApiKey(entry.apiKey),
+      apiKeyName: apiKeyInfo?.name || null,
+    };
 
     let inserted = false;
 
@@ -295,7 +332,7 @@ export async function saveRequestUsage(entry) {
         requests: 0, promptTokens: 0, completionTokens: 0, cost: 0,
         byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
       };
-      aggregateEntryToDay(day, entry);
+      aggregateEntryToDay(day, dailyEntry);
       db.run(`INSERT INTO usageDaily(dateKey, data) VALUES(?, ?) ON CONFLICT(dateKey) DO UPDATE SET data = excluded.data`, [dateKey, stringifyJson(day)]);
 
       // Atomic counter increment in same transaction
@@ -507,12 +544,12 @@ export async function getUsageStats(period = "all") {
         const providerDisplayName = providerNodeNameMap[provider] || provider;
         const apiKeyVal = ak.apiKey;
         const keyInfo = apiKeyVal ? apiKeyMap[apiKeyVal] : null;
-        const keyName = keyInfo?.name || (apiKeyVal ? apiKeyVal.slice(0, 8) + "..." : "Local (No API Key)");
-        const apiKeyMasked = maskApiKey(apiKeyVal);
-        const apiKeyKey = apiKeyMasked || "local-no-key";
-        const statsApiKey = `${apiKeyKey}|${rawModel}|${provider || "unknown"}`;
+        const keyName = ak.keyName || keyInfo?.name || (apiKeyVal ? maskApiKey(apiKeyVal) : "Local (No API Key)");
+        const apiKeyMasked = ak.apiKeyMasked || maskApiKey(apiKeyVal);
+        const apiKeyId = ak.apiKeyId || getApiKeyAggregationId(apiKeyVal, keyInfo);
+        const statsApiKey = `${apiKeyId}|${rawModel}|${provider || "unknown"}`;
         if (!stats.byApiKey[statsApiKey]) {
-          stats.byApiKey[statsApiKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey, lastUsed: dateKey };
+          stats.byApiKey[statsApiKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyId, lastUsed: dateKey };
         }
         stats.byApiKey[statsApiKey].requests += ak.requests || 0;
         stats.byApiKey[statsApiKey].promptTokens += ak.promptTokens || 0;
@@ -556,9 +593,9 @@ export async function getUsageStats(period = "all") {
         if (stats.byAccount[accountKey] && new Date(ts) > new Date(stats.byAccount[accountKey].lastUsed)) stats.byAccount[accountKey].lastUsed = ts;
       }
 
-      const apiKeyKey = (e.apiKey && typeof e.apiKey === "string")
-        ? `${maskApiKey(e.apiKey)}|${e.model}|${e.provider || "unknown"}`
-        : `local-no-key|${e.model}|${e.provider || "unknown"}`;
+      const apiKeyInfo = e.apiKey && typeof e.apiKey === "string" ? apiKeyMap[e.apiKey] : null;
+      const apiKeyId = getApiKeyAggregationId(e.apiKey, apiKeyInfo);
+      const apiKeyKey = `${apiKeyId}|${e.model}|${e.provider || "unknown"}`;
       if (stats.byApiKey[apiKeyKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) stats.byApiKey[apiKeyKey].lastUsed = ts;
 
       const endpoint = e.endpoint || "Unknown";
@@ -627,19 +664,21 @@ export async function getUsageStats(period = "all") {
 
       if (r.apiKey && typeof r.apiKey === "string") {
         const keyInfo = apiKeyMap[r.apiKey];
-        const keyName = keyInfo?.name || r.apiKey.slice(0, 8) + "...";
+        const keyName = keyInfo?.name || maskApiKey(r.apiKey);
         const apiKeyMasked = maskApiKey(r.apiKey);
-        const akKey = `${apiKeyMasked}|${r.model}|${r.provider || "unknown"}`;
+        const apiKeyId = getApiKeyAggregationId(r.apiKey, keyInfo);
+        const akKey = `${apiKeyId}|${r.model}|${r.provider || "unknown"}`;
         if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyId, lastUsed: r.timestamp };
         }
         const ake = stats.byApiKey[akKey];
         ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cachedTokens += cachedTokens; ake.cost += entryCost;
         if (new Date(r.timestamp) > new Date(ake.lastUsed)) ake.lastUsed = r.timestamp;
       } else {
-        const akKey = `local-no-key|${r.model}|${r.provider || "unknown"}`;
+        const apiKeyId = getApiKeyAggregationId(null);
+        const akKey = `${apiKeyId}|${r.model}|${r.provider || "unknown"}`;
         if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked: null, keyName: "Local (No API Key)", apiKeyKey: "local-no-key", lastUsed: r.timestamp };
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked: null, keyName: "Local (No API Key)", apiKeyId, lastUsed: r.timestamp };
         }
         const ake = stats.byApiKey[akKey];
         ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cachedTokens += cachedTokens; ake.cost += entryCost;
@@ -658,6 +697,7 @@ export async function getUsageStats(period = "all") {
   }
 
   stats.totalRequests = Object.values(stats.byProvider).reduce((sum, p) => sum + (p.requests || 0), 0);
+  stats.byApiKey = sanitizeApiKeyStats(stats.byApiKey);
   return stats;
 }
 
