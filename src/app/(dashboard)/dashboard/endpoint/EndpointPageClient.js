@@ -17,7 +17,14 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
-import { filterApiKeys, maskApiKey, sortApiKeysByName } from "./endpointKeyUtils";
+import {
+  applyKeyRenameResponse,
+  filterApiKeys,
+  keepDraftAfterKeyRename,
+  maskApiKey,
+  saveApiKeyName,
+  sortApiKeysByName,
+} from "./endpointKeyUtils";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -78,8 +85,9 @@ export default function APIPageClient({ machineId }) {
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
   const [keySearch, setKeySearch] = useState("");
-  const [editingKeyName, setEditingKeyName] = useState(null);
-  const [editKeyNameValue, setEditKeyNameValue] = useState("");
+  const [keyNameDraft, setKeyNameDraft] = useState(null);
+  const [pendingKeyNameIds, setPendingKeyNameIds] = useState(new Set());
+  const pendingKeyNameIdsRef = useRef(new Set());
 
   // Client-side local/remote detection (UI hint only, not a security gate)
   const [isRemoteHost, setIsRemoteHost] = useState(false);
@@ -673,23 +681,29 @@ export default function APIPageClient({ machineId }) {
   };
 
   const cancelKeyRename = () => {
-    setEditingKeyName(null);
-    setEditKeyNameValue("");
+    setKeyNameDraft(null);
   };
 
   const handleSaveKeyName = async (id) => {
-    const name = editKeyNameValue.trim();
+    if (keyNameDraft?.id !== id) return;
+    const name = keyNameDraft.value.trim();
     if (!name) return;
 
     try {
-      const res = await fetch(`/api/keys/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+      const result = await saveApiKeyName(id, name, {
+        pendingIds: pendingKeyNameIdsRef.current,
+        onPendingChange: (keyId, pending) => {
+          setPendingKeyNameIds(prev => {
+            const next = new Set(prev);
+            if (pending) next.add(keyId);
+            else next.delete(keyId);
+            return next;
+          });
+        },
       });
-      if (res.ok) {
-        setKeys(prev => prev.map(key => key.id === id ? { ...key, name } : key));
-        cancelKeyRename();
+      if (result.status === "saved") {
+        setKeys(prev => applyKeyRenameResponse(prev, id, result.key));
+        setKeyNameDraft(current => keepDraftAfterKeyRename(current, id, name));
       }
     } catch (error) {
       console.log("Error renaming key:", error);
@@ -1043,25 +1057,26 @@ export default function APIPageClient({ machineId }) {
                 className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
               >
                 <div className="flex-1 min-w-0">
-                  {editingKeyName === key.id ? (
+                  {keyNameDraft?.id === key.id ? (
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-1">
                       <Input
                         size="sm"
-                        value={editKeyNameValue}
-                        onChange={(event) => setEditKeyNameValue(event.target.value)}
+                        value={keyNameDraft.value}
+                        onChange={(event) => setKeyNameDraft({ id: key.id, value: event.target.value })}
                         onKeyDown={(event) => {
                           if (event.key === "Enter") handleSaveKeyName(key.id);
                           if (event.key === "Escape") cancelKeyRename();
                         }}
+                        disabled={pendingKeyNameIds.has(key.id)}
                         autoFocus
                       />
                       <div className="flex gap-2">
                         <Button
                           size="sm"
-                          disabled={!editKeyNameValue.trim()}
+                          disabled={pendingKeyNameIds.has(key.id) || !keyNameDraft.value.trim()}
                           onClick={() => handleSaveKeyName(key.id)}
                         >
-                          Save
+                          {pendingKeyNameIds.has(key.id) ? "Saving..." : "Save"}
                         </Button>
                         <Button size="sm" variant="ghost" onClick={cancelKeyRename}>
                           Cancel
@@ -1073,8 +1088,7 @@ export default function APIPageClient({ machineId }) {
                       <p className="text-sm font-medium">{key.name}</p>
                       <button
                         onClick={() => {
-                          setEditingKeyName(key.id);
-                          setEditKeyNameValue(key.name || "");
+                          setKeyNameDraft({ id: key.id, value: key.name || "" });
                         }}
                         className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                         title="Rename key"

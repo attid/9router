@@ -21,20 +21,32 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive, name } = body;
+
+    if (body === null || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Request body must be an object" }, { status: 400 });
+    }
+
+    const updateData = {};
+    if (Object.hasOwn(body, "isActive")) {
+      if (typeof body.isActive !== "boolean") {
+        return NextResponse.json({ error: "isActive must be a boolean" }, { status: 400 });
+      }
+      updateData.isActive = body.isActive;
+    }
+    if (Object.hasOwn(body, "name")) {
+      if (typeof body.name !== "string" || !body.name.trim()) {
+        return NextResponse.json({ error: "Name is required" }, { status: 400 });
+      }
+      updateData.name = body.name.trim();
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
+    }
 
     const existing = await getApiKeyById(id);
     if (!existing) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });
-    }
-
-    const updateData = {};
-    if (isActive !== undefined) updateData.isActive = isActive;
-    if (name !== undefined) {
-      if (typeof name !== "string" || !name.trim()) {
-        return NextResponse.json({ error: "Name is required" }, { status: 400 });
-      }
-      updateData.name = name.trim();
     }
 
     const updated = await updateApiKey(id, updateData);

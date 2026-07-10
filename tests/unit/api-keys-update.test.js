@@ -30,12 +30,16 @@ const existingKey = {
   createdAt: "2026-07-01T00:00:00.000Z",
 };
 
-function renameRequest(name) {
+function updateRequest(body) {
   return new Request("http://localhost/api/keys/key-1", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(body),
   });
+}
+
+function renameRequest(name) {
+  return updateRequest({ name });
 }
 
 describe("PUT /api/keys/[id]", () => {
@@ -65,6 +69,64 @@ describe("PUT /api/keys/[id]", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: "Name is required" });
     expect(mocks.updateApiKey).not.toHaveBeenCalled();
+  });
+
+  it.each([null, [], "name", 42])("rejects a non-object body: %j", async (body) => {
+    const response = await PUT(updateRequest(body), {
+      params: Promise.resolve({ id: existingKey.id }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Request body must be an object" });
+    expect(mocks.getApiKeyById).not.toHaveBeenCalled();
+    expect(mocks.updateApiKey).not.toHaveBeenCalled();
+  });
+
+  it.each([{}, { unexpected: true }])("rejects a body with no recognized fields: %j", async (body) => {
+    const response = await PUT(updateRequest(body), {
+      params: Promise.resolve({ id: existingKey.id }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "No valid fields to update" });
+    expect(mocks.getApiKeyById).not.toHaveBeenCalled();
+    expect(mocks.updateApiKey).not.toHaveBeenCalled();
+  });
+
+  it.each([null, 0, 1, "true", {}, []])("rejects a non-boolean isActive value: %j", async (isActive) => {
+    const response = await PUT(updateRequest({ isActive }), {
+      params: Promise.resolve({ id: existingKey.id }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "isActive must be a boolean" });
+    expect(mocks.getApiKeyById).not.toHaveBeenCalled();
+    expect(mocks.updateApiKey).not.toHaveBeenCalled();
+  });
+
+  it("accepts boolean status updates", async () => {
+    const response = await PUT(updateRequest({ isActive: false }), {
+      params: Promise.resolve({ id: existingKey.id }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.updateApiKey).toHaveBeenCalledWith(existingKey.id, { isActive: false });
+  });
+
+  it("does not reject future fields alongside a recognized update", async () => {
+    const response = await PUT(updateRequest({
+      name: "Production",
+      allowedModels: ["future-model"],
+      limits: { future: true },
+    }), {
+      params: Promise.resolve({ id: existingKey.id }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.updateApiKey).toHaveBeenCalledWith(
+      existingKey.id,
+      expect.objectContaining({ name: "Production" })
+    );
   });
 
   it("returns 404 without attempting an update when the key does not exist", async () => {
