@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCombos, createCombo, getComboByName } from "@/lib/localDb";
+import { validateComboModels } from "@/lib/comboUtils.js";
 
 export const dynamic = "force-dynamic";
 
@@ -32,13 +33,19 @@ export async function POST(request) {
       return NextResponse.json({ error: "Name can only contain letters, numbers, -, _ and ." }, { status: 400 });
     }
 
+    const comboModels = models === undefined ? [] : models;
+    const modelsError = validateComboModels(comboModels);
+    if (modelsError) {
+      return NextResponse.json({ error: modelsError }, { status: 400 });
+    }
+
     // Check if name already exists
     const existing = await getComboByName(name);
     if (existing) {
       return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
     }
 
-    const combo = await createCombo({ name, models: models || [], kind: kind || null });
+    const combo = await createCombo({ name, models: comboModels, kind: kind || null });
 
     return NextResponse.json(combo, { status: 201 });
   } catch (error) {

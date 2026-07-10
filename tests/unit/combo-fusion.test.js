@@ -18,6 +18,27 @@ function errResponse(status = 500) {
 }
 
 describe("fusion combo", () => {
+  it("normalizes member names and ignores weights for the panel and automatic judge", async () => {
+    const seen = [];
+    const handleSingleModel = vi.fn(async (_body, model) => {
+      seen.push(model);
+      return okResponse(`ans-${model}`);
+    });
+
+    await handleFusionChat({
+      body: { messages: [{ role: "user", content: "Q" }] },
+      models: [
+        { model: "p/first", weight: 0 },
+        { model: "p/second", weight: 9 },
+      ],
+      handleSingleModel,
+      log,
+    });
+
+    expect(seen.slice(0, 2).sort()).toEqual(["p/first", "p/second"]);
+    expect(seen.at(-1)).toBe("p/first");
+  });
+
   it("answers directly with a single-model panel (nothing to fuse)", async () => {
     const handleSingleModel = vi.fn(async () => okResponse("solo"));
     await handleFusionChat({

@@ -1,6 +1,26 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
-import { getRotatedModels, resetComboRotation } from "../../open-sse/services/combo.js";
+import { getRotatedModels, handleComboChat, resetComboRotation } from "../../open-sse/services/combo.js";
+
+const log = { info: () => {}, warn: () => {}, debug: () => {} };
+
+async function firstChoices(models, count, stickyLimit = 1) {
+  const choices = [];
+  for (let i = 0; i < count; i++) {
+    const handleSingleModel = vi.fn(async () => new Response("ok"));
+    await handleComboChat({
+      body: { messages: [{ role: "user", content: "hello" }] },
+      models,
+      handleSingleModel,
+      log,
+      comboName: "weighted-combo",
+      comboStrategy: "round-robin",
+      comboStickyLimit: stickyLimit,
+    });
+    choices.push(handleSingleModel.mock.calls[0][1]);
+  }
+  return choices;
+}
 
 describe("combo round-robin routing", () => {
   beforeEach(() => {
@@ -54,5 +74,82 @@ describe("combo round-robin routing", () => {
 
     expect(getRotatedModels(models, "code-xhigh", "fallback", 2)).toEqual(models);
     expect(getRotatedModels(models, "code-xhigh", "fallback", 2)).toEqual(models);
+  });
+
+  it("rotates positive weights deterministically", async () => {
+    const models = [
+      { model: "provider/a", weight: 2 },
+      { model: "provider/b", weight: 1 },
+    ];
+
+    await expect(firstChoices(models, 6)).resolves.toEqual([
+      "provider/a", "provider/a", "provider/b",
+      "provider/a", "provider/a", "provider/b",
+    ]);
+  });
+
+  it("applies sticky limits to weighted slots", async () => {
+    const models = [
+      { model: "provider/a", weight: 2 },
+      { model: "provider/b", weight: 1 },
+    ];
+
+    await expect(firstChoices(models, 6, 2)).resolves.toEqual([
+      "provider/a", "provider/a", "provider/a", "provider/a", "provider/b", "provider/b",
+    ]);
+  });
+
+  it("keeps zero-weight models after the positive pool in fallback strategy", async () => {
+    const tried = [];
+    await handleComboChat({
+      body: {},
+      models: [
+        { model: "provider/zero-first", weight: 0 },
+        { model: "provider/positive", weight: 2 },
+        { model: "provider/zero-last", weight: 0 },
+      ],
+      handleSingleModel: async (_body, model) => { tried.push(model); throw new Error("next"); },
+      log,
+      comboName: "fallback-zero",
+      comboStrategy: "fallback",
+    });
+
+    expect(tried).toEqual(["provider/positive", "provider/zero-first", "provider/zero-last"]);
+  });
+
+  it("uses zero-weight models only after every weighted fallback", async () => {
+    const tried = [];
+    await handleComboChat({
+      body: {},
+      models: [
+        { model: "provider/a", weight: 1 },
+        { model: "provider/zero", weight: 0 },
+        { model: "provider/b", weight: 1 },
+      ],
+      handleSingleModel: async (_body, model) => { tried.push(model); throw new Error("next"); },
+      log,
+      comboName: "round-robin-zero",
+      comboStrategy: "round-robin",
+    });
+
+    expect(tried).toEqual(["provider/a", "provider/b", "provider/zero"]);
+  });
+
+  it("lets capacity auto-switch reorder a structured weighted try list", async () => {
+    const tried = [];
+    await handleComboChat({
+      body: { messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "x" } }] }] },
+      models: [
+        { model: "deepseek/deepseek-chat", weight: 3 },
+        { model: "anthropic/claude-sonnet-4.6", weight: 1 },
+        { model: "deepseek/deepseek-reasoner", weight: 0 },
+      ],
+      handleSingleModel: async (_body, model) => { tried.push(model); return new Response("ok"); },
+      log,
+      comboName: "vision-weighted",
+      comboStrategy: "round-robin",
+    });
+
+    expect(tried[0]).toBe("anthropic/claude-sonnet-4.6");
   });
 });

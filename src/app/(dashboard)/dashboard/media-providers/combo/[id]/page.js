@@ -6,13 +6,14 @@ import Link from "next/link";
 import { Card, Button, Input, Toggle, ModelSelectModal } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { AI_PROVIDERS, MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
+import { getComboModelName, normalizeComboModels } from "@/lib/comboUtils.js";
 
 // Parse "providerId/model" or just "providerId" → { providerId, model }
 function parseModelEntry(entry) {
-  if (typeof entry !== "string") return { providerId: "", model: "" };
-  const idx = entry.indexOf("/");
-  if (idx < 0) return { providerId: entry, model: "" };
-  return { providerId: entry.slice(0, idx), model: entry.slice(idx + 1) };
+  const name = getComboModelName(entry) || "";
+  const idx = name.indexOf("/");
+  if (idx < 0) return { providerId: name, model: "" };
+  return { providerId: name.slice(0, idx), model: name.slice(idx + 1) };
 }
 
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -82,7 +83,7 @@ export default function ComboDetailPage() {
       const c = await comboRes.json();
       setCombo(c);
       setName(c.name);
-      setProviders(c.models || []);
+      setProviders(normalizeComboModels(c.models));
       const s = settingsRes.ok ? await settingsRes.json() : {};
       setRoundRobin(s.comboStrategies?.[c.name]?.fallbackStrategy === "round-robin");
       const allLogs = logsRes.ok ? await logsRes.json() : [];
@@ -120,16 +121,16 @@ export default function ComboDetailPage() {
 
   const handleAddModel = async (model) => {
     const value = model?.value || model;
-    if (!value || providers.includes(value)) return;
-    const next = [...providers, value];
+    if (!value || providers.some((entry) => entry.model === value)) return;
+    const next = [...providers, { model: value, weight: 1 }];
     setProviders(next);
     await saveCombo({ models: next });
   };
 
   const handleDeselectModel = async (model) => {
     const value = model?.value || model;
-    if (!value || !providers.includes(value)) return;
-    const next = providers.filter((p) => p !== value);
+    if (!value || !providers.some((entry) => entry.model === value)) return;
+    const next = providers.filter((entry) => entry.model !== value);
     setProviders(next);
     await saveCombo({ models: next });
   };
@@ -145,6 +146,13 @@ export default function ComboDetailPage() {
     const swap = idx + dir;
     if (swap < 0 || swap >= next.length) return;
     [next[idx], next[swap]] = [next[swap], next[idx]];
+    setProviders(next);
+    await saveCombo({ models: next });
+  };
+
+  const handleWeightChange = async (idx, weight) => {
+    const next = [...providers];
+    next[idx] = { ...next[idx], weight };
     setProviders(next);
     await saveCombo({ models: next });
   };
@@ -283,7 +291,7 @@ export default function ComboDetailPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
           <div>
             <h2 className="text-lg font-semibold">Providers</h2>
-            <p className="text-xs text-text-muted">Tried in order (top-down) or rotated when round-robin is on.</p>
+            <p className="text-xs text-text-muted">Positive weights rotate; weight 0 is fallback-only.</p>
           </div>
           <Button size="sm" icon="add" onClick={() => setShowPicker(true)}>Add Provider</Button>
         </div>
@@ -297,7 +305,7 @@ export default function ComboDetailPage() {
               const { providerId, model } = parseModelEntry(entry);
               const p = AI_PROVIDERS[providerId];
               return (
-                <div key={`${entry}-${idx}`} className="flex items-center gap-3 p-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02]">
+                <div key={`${entry.model}-${idx}`} className="flex items-center gap-3 p-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02]">
                   <span className="text-xs text-text-muted w-5 text-center">{idx + 1}</span>
                   <ProviderIcon
                     src={`/providers/${providerId}.png`}
@@ -311,6 +319,17 @@ export default function ComboDetailPage() {
                     <div className="text-sm font-medium truncate">{p?.name || providerId}</div>
                     {model && <code className="text-[10px] text-text-muted font-mono truncate block">{model}</code>}
                   </div>
+                  <label className="flex shrink-0 items-center gap-1 text-[10px] text-text-muted" title="Round-robin weight; 0 means fallback-only">
+                    Weight
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={entry.weight}
+                      onChange={(e) => handleWeightChange(idx, Math.max(0, Number.parseInt(e.target.value, 10) || 0))}
+                      className="w-12 rounded border border-border bg-surface px-1 py-0.5 text-center font-mono text-xs text-text-main outline-none focus:border-primary"
+                    />
+                  </label>
                   <div className="flex items-center gap-0.5">
                     <button onClick={() => handleMove(idx, -1)} disabled={idx === 0} className={`p-1 rounded ${idx === 0 ? "text-text-muted/20" : "text-text-muted hover:text-primary hover:bg-black/5"}`} title="Move up">
                       <span className="material-symbols-outlined text-[16px]">arrow_upward</span>
@@ -402,7 +421,7 @@ export default function ComboDetailPage() {
         modelAliases={modelAliases}
         title={`Add ${kindLabel} Model`}
         kindFilter={combo.kind}
-        addedModelValues={providers}
+        addedModelValues={providers.map(getComboModelName)}
         closeOnSelect={false}
       />
     </div>

@@ -5,11 +5,12 @@ import Modal from "./Modal";
 import Input from "./Input";
 import Button from "./Button";
 import ModelSelectModal from "./ModelSelectModal";
+import { getComboModelName, normalizeComboModels } from "@/lib/comboUtils.js";
 
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
 // Inline editable model item
-function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({ index, model, weight, isFirst, isLast, onEdit, onWeightChange, onMoveUp, onMoveDown, onRemove }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(model);
   const commit = () => {
@@ -32,6 +33,12 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
         <div className="min-w-0 flex-1 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs text-text-main hover:bg-black/5 dark:hover:bg-white/5"
           onClick={() => setEditing(true)} title="Click to edit">{model}</div>
       )}
+      <label className="flex shrink-0 items-center gap-1 text-[10px] text-text-muted" title="Round-robin weight; 0 means fallback-only">
+        Weight
+        <input type="number" min="0" step="1" value={weight}
+          onChange={(e) => onWeightChange(Math.max(0, Number.parseInt(e.target.value, 10) || 0))}
+          className="w-12 rounded border border-black/10 bg-white px-1 py-0.5 text-center font-mono text-xs text-text-main outline-none focus:border-primary dark:border-white/10 dark:bg-black/20" />
+      </label>
       <div className="flex shrink-0 items-center gap-0.5">
         <button onClick={onMoveUp} disabled={isFirst}
           className={`p-0.5 rounded ${isFirst ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`} title="Move up">
@@ -56,7 +63,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
     ? (forcePrefix && combo.name.startsWith(forcePrefix) ? combo.name.slice(forcePrefix.length) : combo.name)
     : "";
   const [name, setName] = useState(initialName);
-  const [models, setModels] = useState(combo?.models || []);
+  const [models, setModels] = useState(() => normalizeComboModels(combo?.models));
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -84,10 +91,12 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
   };
 
   const handleAddModel = (model) => {
-    if (!models.includes(model.value)) setModels([...models, model.value]);
+    if (!models.some((entry) => entry.model === model.value)) {
+      setModels([...models, { model: model.value, weight: 1 }]);
+    }
   };
   const handleDeselectModel = (model) => {
-    setModels(models.filter((m) => m !== model.value));
+    setModels(models.filter((entry) => entry.model !== model.value));
   };
   const handleRemoveModel = (i) => setModels(models.filter((_, idx) => idx !== i));
   const handleMoveUp = (i) => {
@@ -140,16 +149,20 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
               </div>
             ) : (
               <div className="flex max-h-[55vh] min-w-0 flex-col gap-1 overflow-y-auto sm:max-h-[350px]">
-                {models.map((model, index) => (
-                  <ModelItem key={index} index={index} model={model}
+                {models.map((entry, index) => (
+                  <ModelItem key={index} index={index} model={entry.model} weight={entry.weight}
                     isFirst={index === 0} isLast={index === models.length - 1}
-                    onEdit={(v) => { const a = [...models]; a[index] = v; setModels(a); }}
+                    onEdit={(model) => { const a = [...models]; a[index] = { ...a[index], model }; setModels(a); }}
+                    onWeightChange={(weight) => { const a = [...models]; a[index] = { ...a[index], weight }; setModels(a); }}
                     onMoveUp={() => handleMoveUp(index)}
                     onMoveDown={() => handleMoveDown(index)}
                     onRemove={() => handleRemoveModel(index)} />
                 ))}
               </div>
             )}
+            <p className="mt-1 text-[10px] text-text-muted">
+              Positive weights control Round Robin. Weight 0 is fallback-only. Fusion ignores weights.
+            </p>
             <button onClick={() => setShowModelSelect(true)}
               className="w-full mt-2 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-primary font-medium hover:text-primary hover:border-primary/50 transition-colors flex items-center justify-center gap-1">
               <span className="material-symbols-outlined text-[16px]">add</span>
@@ -170,7 +183,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
         onSelect={handleAddModel} onDeselect={handleDeselectModel}
         activeProviders={activeProviders} modelAliases={modelAliases}
         title="Add Model to Combo" kindFilter={kindFilter}
-        addedModelValues={models} closeOnSelect={false} />
+        addedModelValues={models.map(getComboModelName)} closeOnSelect={false} />
     </>
   );
 }

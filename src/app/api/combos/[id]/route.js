@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getComboById, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { validateComboModels } from "@/lib/comboUtils.js";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -38,6 +39,13 @@ export async function PUT(request, { params }) {
       const existing = await getComboByName(body.name);
       if (existing && existing.id !== id) {
         return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "models")) {
+      const modelsError = validateComboModels(body.models);
+      if (modelsError) {
+        return NextResponse.json({ error: modelsError }, { status: 400 });
       }
     }
     

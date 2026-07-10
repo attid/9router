@@ -6,6 +6,7 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import { getComboModelNames, normalizeComboModels } from "../../src/lib/comboUtils.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -185,6 +186,72 @@ export function getRotatedModels(models, comboName, strategy, stickyLimit = 1) {
   return rotatedModels;
 }
 
+function pickWeightedModel(models, comboName, stickyLimit) {
+  const totalWeight = models.reduce((total, member) => total + member.weight, 0);
+  if (totalWeight <= 0) return null;
+
+  const rotationKey = comboName || "__default__";
+  const normalizedStickyLimit = normalizeStickyLimit(stickyLimit);
+  const existingState = comboRotationState.get(rotationKey);
+  const state = typeof existingState === "number"
+    ? { index: existingState, consecutiveUseCount: 0 }
+    : (existingState || { index: 0, consecutiveUseCount: 0 });
+  const currentIndex = state.index % totalWeight;
+
+  let remaining = currentIndex;
+  let selected = models[0];
+  for (const member of models) {
+    if (remaining < member.weight) {
+      selected = member;
+      break;
+    }
+    remaining -= member.weight;
+  }
+
+  const nextUseCount = state.consecutiveUseCount + 1;
+  if (nextUseCount >= normalizedStickyLimit) {
+    comboRotationState.set(rotationKey, {
+      index: (currentIndex + 1) % totalWeight,
+      consecutiveUseCount: 0,
+    });
+  } else {
+    comboRotationState.set(rotationKey, {
+      index: currentIndex,
+      consecutiveUseCount: nextUseCount,
+    });
+  }
+
+  return selected;
+}
+
+function uniqueModelNames(members) {
+  return [...new Set(members.map((member) => member.model))];
+}
+
+/**
+ * Build an ordinary combo's try order. Positive weights form the rotating pool;
+ * zero-weight members are fallback-only unless capacity auto-switch later needs
+ * to promote them for request compatibility.
+ */
+export function getComboTryOrder(models, comboName, strategy, stickyLimit = 1) {
+  const normalized = normalizeComboModels(models);
+  const weighted = normalized.filter((member) => member.weight > 0);
+  const fallbackOnly = normalized.filter((member) => member.weight === 0);
+  const fallbackNames = uniqueModelNames(fallbackOnly);
+
+  if (strategy !== "round-robin" || weighted.length === 0) {
+    return [...uniqueModelNames(weighted), ...fallbackNames];
+  }
+
+  const selected = pickWeightedModel(weighted, comboName, stickyLimit);
+  const selectedIndex = weighted.indexOf(selected);
+  const rotatedPool = [
+    ...weighted.slice(selectedIndex),
+    ...weighted.slice(0, selectedIndex),
+  ];
+  return [...uniqueModelNames(rotatedPool), ...fallbackNames];
+}
+
 /**
  * Reset in-memory rotation state when combo/settings change
  * @param {string} [comboName] - Combo name to reset; omit to clear all
@@ -198,7 +265,7 @@ export function resetComboRotation(comboName) {
  * Get combo models from combos data
  * @param {string} modelStr - Model string to check
  * @param {Array|Object} combosData - Array of combos or object with combos
- * @returns {string[]|null} Array of models or null if not a combo
+ * @returns {{model: string, weight: number}[]|null} Normalized members or null
  */
 export function getComboModelsFromData(modelStr, combosData) {
   // Don't check if it's in provider/model format
@@ -209,7 +276,7 @@ export function getComboModelsFromData(modelStr, combosData) {
   
   const combo = combos.find(c => c.name === modelStr);
   if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
+    return normalizeComboModels(combo.models);
   }
   return null;
 }
@@ -218,7 +285,7 @@ export function getComboModelsFromData(modelStr, combosData) {
  * Handle combo chat with fallback
  * @param {Object} options
  * @param {Object} options.body - Request body
- * @param {string[]} options.models - Array of model strings to try
+ * @param {(string|{model: string, weight?: number})[]} options.models - Combo members to try
  * @param {Function} options.handleSingleModel - Function to handle single model: (body, modelStr) => Promise<Response>
  * @param {Object} options.log - Logger object
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
@@ -227,8 +294,8 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @returns {Promise<Response>}
  */
 export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
-  // Apply rotation strategy if enabled
-  let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+  // Build the weighted rotation + fallback order before upstream capacity ranking.
+  let rotatedModels = getComboTryOrder(models, comboName, comboStrategy, comboStickyLimit);
 
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
   if (autoSwitch) {
@@ -485,7 +552,7 @@ function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeoutMs })
  *
  * @param {Object} options
  * @param {Object} options.body - Request body (client format)
- * @param {string[]} options.models - Panel model strings
+ * @param {(string|{model: string, weight?: number})[]} options.models - Panel members; weights are ignored
  * @param {Function} options.handleSingleModel - (body, modelStr) => Promise<Response>
  * @param {Object} options.log - Logger
  * @param {string} [options.comboName] - Combo name (logging)
@@ -494,7 +561,9 @@ function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeoutMs })
  * @returns {Promise<Response>}
  */
 export async function handleFusionChat({ body, models, handleSingleModel, log, comboName, judgeModel, tuning }) {
-  const panel = Array.isArray(models) ? models.filter(Boolean) : [];
+  // Fusion is a panel strategy rather than a balancing strategy: preserve every
+  // configured member in declared order and deliberately ignore its weight.
+  const panel = getComboModelNames(models);
   if (panel.length === 0) {
     return new Response(
       JSON.stringify({ error: { message: "Fusion combo has no models" } }),
