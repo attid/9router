@@ -3,11 +3,23 @@ import { describe, expect, it } from "vitest";
 import {
   getComboModelName,
   getComboModelNames,
+  getActiveComboProviders,
   normalizeComboModels,
   validateComboModels,
 } from "../../src/lib/comboUtils.js";
 
 describe("combo model normalization", () => {
+  it("only offers active provider connections to combo model selectors", () => {
+    const active = { id: "active", isActive: true };
+    const legacyActive = { id: "legacy" };
+    const disabled = { id: "disabled", isActive: false };
+
+    expect(getActiveComboProviders([active, disabled, legacyActive])).toEqual([
+      active,
+      legacyActive,
+    ]);
+  });
+
   it("normalizes legacy strings and mixed structured members", () => {
     expect(normalizeComboModels([
       "provider/legacy",

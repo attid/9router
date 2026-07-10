@@ -27,6 +27,12 @@ export function getComboModelNames(models) {
   return models.map(getComboModelName).filter(Boolean);
 }
 
+/** Keep legacy connections active unless they are explicitly disabled. */
+export function getActiveComboProviders(connections) {
+  if (!Array.isArray(connections)) return [];
+  return connections.filter((connection) => connection?.isActive !== false);
+}
+
 /**
  * Return null for a valid models payload, otherwise a user-facing error.
  */
