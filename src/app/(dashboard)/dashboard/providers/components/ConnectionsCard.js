@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
@@ -204,7 +205,7 @@ function AddApiKeyModal({ isOpen, provider, providerName, proxyPools, onSave, on
   const handleValidate = async () => {
     setValidating(true);
     try {
-      const res = await fetch("/api/providers/validate", {
+      const res = await fetch(withBasePath("/api/providers/validate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider, apiKey: formData.apiKey }),
@@ -222,7 +223,7 @@ function AddApiKeyModal({ isOpen, provider, providerName, proxyPools, onSave, on
       let isValid = false;
       try {
         setValidating(true); setValidationResult(null);
-        const res = await fetch("/api/providers/validate", {
+        const res = await fetch(withBasePath("/api/providers/validate"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ provider, apiKey: formData.apiKey }),
@@ -309,9 +310,9 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
   const fetch_ = useCallback(async () => {
     try {
       const [connRes, proxyRes, settingsRes] = await Promise.all([
-        fetch("/api/providers", { cache: "no-store" }),
-        fetch("/api/proxy-pools?isActive=true", { cache: "no-store" }),
-        fetch("/api/settings", { cache: "no-store" }),
+        fetch(withBasePath("/api/providers"), { cache: "no-store" }),
+        fetch(withBasePath("/api/proxy-pools?isActive=true"), { cache: "no-store" }),
+        fetch(withBasePath("/api/settings"), { cache: "no-store" }),
       ]);
       const connData = await connRes.json();
       const proxyData = await proxyRes.json();
@@ -329,7 +330,7 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
 
   const saveStrategy = async (strategy, stickyLimit) => {
     try {
-      const res = await fetch("/api/settings", { cache: "no-store" });
+      const res = await fetch(withBasePath("/api/settings"), { cache: "no-store" });
       const data = res.ok ? await res.json() : {};
       const current = data.providerStrategies || {};
       const override = {};
@@ -338,7 +339,7 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
       const updated = { ...current };
       if (Object.keys(override).length === 0) delete updated[providerId];
       else updated[providerId] = override;
-      await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerStrategies: updated }) });
+      await fetch(withBasePath("/api/settings"), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerStrategies: updated }) });
     } catch (e) { console.log("saveStrategy error:", e); }
   };
 
@@ -348,8 +349,8 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
     setConnections(next);
     try {
       await Promise.all([
-        fetch(`/api/providers/${next[i1].id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ priority: i1 }) }),
-        fetch(`/api/providers/${next[i2].id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ priority: i2 }) }),
+        fetch(withBasePath(`/api/providers/${next[i1].id}`), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ priority: i1 }) }),
+        fetch(withBasePath(`/api/providers/${next[i2].id}`), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ priority: i2 }) }),
       ]);
     } catch { await fetch_(); }
   };
@@ -361,7 +362,7 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
       onConfirm: async () => {
         setConfirmState(null);
         try {
-          const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
+          const res = await fetch(withBasePath(`/api/providers/${id}`), { method: "DELETE" });
           if (res.ok) setConnections((prev) => prev.filter((c) => c.id !== id));
         } catch (e) { console.log("delete error:", e); }
       }
@@ -370,28 +371,28 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
 
   const handleToggleActive = async (id, isActive) => {
     try {
-      const res = await fetch(`/api/providers/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive }) });
+      const res = await fetch(withBasePath(`/api/providers/${id}`), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive }) });
       if (res.ok) setConnections((prev) => prev.map((c) => c.id === id ? { ...c, isActive } : c));
     } catch (e) { console.log("toggle error:", e); }
   };
 
   const handleUpdateProxy = async (connId, proxyPoolId) => {
     try {
-      const res = await fetch(`/api/providers/${connId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proxyPoolId: proxyPoolId || null }) });
+      const res = await fetch(withBasePath(`/api/providers/${connId}`), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proxyPoolId: proxyPoolId || null }) });
       if (res.ok) setConnections((prev) => prev.map((c) => c.id === connId ? { ...c, providerSpecificData: { ...c.providerSpecificData, proxyPoolId: proxyPoolId || null } } : c));
     } catch (e) { console.log("proxy error:", e); }
   };
 
   const handleSaveApiKey = async (formData) => {
     try {
-      const res = await fetch("/api/providers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: providerId, ...formData }) });
+      const res = await fetch(withBasePath("/api/providers"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: providerId, ...formData }) });
       if (res.ok) { await fetch_(); setShowAddModal(false); }
     } catch (e) { console.log("save apikey error:", e); }
   };
 
   const handleUpdateConnection = async (formData) => {
     try {
-      const res = await fetch(`/api/providers/${selectedConnection.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(formData) });
+      const res = await fetch(withBasePath(`/api/providers/${selectedConnection.id}`), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(formData) });
       if (res.ok) { await fetch_(); setShowEditModal(false); }
     } catch (e) { console.log("update connection error:", e); }
   };

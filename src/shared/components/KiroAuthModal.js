@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
@@ -33,7 +34,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
       setIdcCredentials(null);
 
       try {
-        const res = await fetch("/api/oauth/kiro/auto-import");
+        const res = await fetch(withBasePath("/api/oauth/kiro/auto-import"));
         const data = await res.json();
 
         if (data.found) {
@@ -82,7 +83,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
     setError(null);
 
     try {
-      const res = await fetch("/api/oauth/kiro/import", {
+      const res = await fetch(withBasePath("/api/oauth/kiro/import"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -116,7 +117,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
     setError(null);
 
     try {
-      const res = await fetch("/api/oauth/kiro/import-cli-proxy", {
+      const res = await fetch(withBasePath("/api/oauth/kiro/import-cli-proxy"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ json: cliProxyJson.trim() }),
@@ -154,7 +155,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
     setError(null);
 
     try {
-      const res = await fetch("/api/oauth/kiro/api-key", {
+      const res = await fetch(withBasePath("/api/oauth/kiro/api-key"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

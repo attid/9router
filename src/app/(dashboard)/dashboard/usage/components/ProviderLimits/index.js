@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
@@ -183,8 +184,7 @@ export default function ProviderLimits() {
           params.set("provider", providerFilter);
         }
 
-        const response = await fetch(
-          `/api/providers/client?${params.toString()}`,
+        const response = await fetch(withBasePath(`/api/providers/client?${params.toString()}`),
         );
         if (!response.ok) throw new Error("Failed to fetch connections");
 
@@ -220,7 +220,7 @@ export default function ProviderLimits() {
       console.log(
         `[ProviderLimits] Fetching quota for ${provider} (${connectionId})`,
       );
-      const response = await fetch(`/api/usage/${connectionId}`);
+      const response = await fetch(withBasePath(`/api/usage/${connectionId}`));
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -305,7 +305,7 @@ export default function ProviderLimits() {
       setErrors((prev) => ({ ...prev, [connectionId]: null }));
 
       try {
-        const response = await fetch(`/api/usage/${connectionId}/codex-reset-credits`, { method: "POST" });
+        const response = await fetch(withBasePath(`/api/usage/${connectionId}/codex-reset-credits`), { method: "POST" });
         const result = await response.json().catch(() => ({}));
 
         if (!response.ok) {
@@ -326,7 +326,7 @@ export default function ProviderLimits() {
   const handleViewCodexResetCredits = useCallback(async (connection) => {
     setResetCreditsState({ connection, loading: true, error: null, data: null });
     try {
-      const response = await fetch(`/api/usage/${connection.id}/codex-reset-credits`, { cache: "no-store" });
+      const response = await fetch(withBasePath(`/api/usage/${connection.id}/codex-reset-credits`), { cache: "no-store" });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(result.error || result.message || "Failed to load Codex reset credits");
@@ -348,7 +348,7 @@ export default function ProviderLimits() {
       if (!confirm("Delete this connection?")) return;
       setDeletingId(id);
       try {
-        const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
+        const res = await fetch(withBasePath(`/api/providers/${id}`), { method: "DELETE" });
         if (res.ok) {
           setQuotaData((prev) => {
             const next = { ...prev };
@@ -396,7 +396,7 @@ export default function ProviderLimits() {
     async (id, isActive) => {
       setTogglingId(id);
       try {
-        const res = await fetch(`/api/providers/${id}`, {
+        const res = await fetch(withBasePath(`/api/providers/${id}`), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ isActive }),
@@ -423,7 +423,7 @@ export default function ProviderLimits() {
       const connectionId = selectedConnection.id;
       const provider = selectedConnection.provider;
       try {
-        const res = await fetch(`/api/providers/${connectionId}`, {
+        const res = await fetch(withBasePath(`/api/providers/${connectionId}`), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(formData),
@@ -445,7 +445,7 @@ export default function ProviderLimits() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/proxy-pools?isActive=true", { cache: "no-store" })
+    fetch(withBasePath("/api/proxy-pools?isActive=true"), { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => {
         if (!cancelled && data?.proxyPools) {
@@ -534,7 +534,7 @@ export default function ProviderLimits() {
 
   // Load auto-ping per-connection maps
   useEffect(() => {
-    fetch("/api/settings", { cache: "no-store" })
+    fetch(withBasePath("/api/settings"), { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : {}))
       .then((s) => setAutoPingMaps({
         claude: s?.claudeAutoPing?.connections || {},
@@ -552,10 +552,10 @@ export default function ProviderLimits() {
     const nextMaps = { ...autoPingMaps, [provider]: nextProviderMap };
     setAutoPingMaps(nextMaps);
     try {
-      const r = await fetch("/api/settings", { cache: "no-store" });
+      const r = await fetch(withBasePath("/api/settings"), { cache: "no-store" });
       const s = r.ok ? await r.json() : {};
       const cfg = { ...(s[settingsKey] || {}), connections: nextProviderMap };
-      await fetch("/api/settings", {
+      await fetch(withBasePath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [settingsKey]: cfg }),
@@ -654,7 +654,7 @@ export default function ProviderLimits() {
       try {
         await Promise.all(
           targetIds.map((id) =>
-            fetch(`/api/providers/${id}`, {
+            fetch(withBasePath(`/api/providers/${id}`), {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ isActive }),
@@ -756,7 +756,7 @@ export default function ProviderLimits() {
                   </span>
                 ) : (
                   <ProviderIcon
-                    src={`/providers/${providerFilter}.png`}
+                    src={withBasePath(`/providers/${providerFilter}.png`)}
                     alt={providerFilter}
                     size={18}
                     className="size-[18px] rounded object-contain"
@@ -818,7 +818,7 @@ export default function ProviderLimits() {
                         className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${providerFilter === provider ? "bg-primary/10 text-primary" : "text-text-primary hover:bg-black/5 dark:hover:bg-white/10"}`}
                       >
                         <ProviderIcon
-                          src={`/providers/${provider}.png`}
+                          src={withBasePath(`/providers/${provider}.png`)}
                           alt={provider}
                           size={24}
                           className="size-6 rounded-md object-contain"
@@ -985,7 +985,7 @@ export default function ProviderLimits() {
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="w-8 h-8 shrink-0 rounded-md flex items-center justify-center overflow-hidden">
                       <ProviderIcon
-                        src={`/providers/${conn.provider}.png`}
+                        src={withBasePath(`/providers/${conn.provider}.png`)}
                         alt={conn.provider}
                         size={32}
                         className="object-contain"

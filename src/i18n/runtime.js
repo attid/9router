@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { DEFAULT_LOCALE, LOCALE_COOKIE, normalizeLocale } from "./config";
 
 let translationMap = {};
@@ -24,7 +25,7 @@ async function loadTranslations(locale) {
   }
   
   try {
-    const response = await fetch(`/i18n/literals/${locale}.json`);
+    const response = await fetch(withBasePath(`/i18n/literals/${locale}.json`));
     translationMap = await response.json();
   } catch (err) {
     console.error("Failed to load translations:", err);

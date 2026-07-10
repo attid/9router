@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useCallback, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Modal } from "@/shared/components";
@@ -124,9 +125,9 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
   const fetchData = useCallback(async () => {
     try {
       const [aliasRes, connRes, customRes] = await Promise.all([
-        fetch("/api/models/alias"),
-        fetch("/api/providers", { cache: "no-store" }),
-        fetch("/api/models/custom", { cache: "no-store" }),
+        fetch(withBasePath("/api/models/alias")),
+        fetch(withBasePath("/api/providers"), { cache: "no-store" }),
+        fetch(withBasePath("/api/models/custom"), { cache: "no-store" }),
       ]);
       const aliasData = await aliasRes.json();
       const connData = await connRes.json();
@@ -142,7 +143,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
   const handleSetAlias = async (modelId, alias) => {
     const fullModel = `${providerAlias}/${modelId}`;
     try {
-      const res = await fetch("/api/models/alias", {
+      const res = await fetch(withBasePath("/api/models/alias"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: fullModel, alias }),
@@ -153,14 +154,14 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
 
   const handleDeleteAlias = async (alias) => {
     try {
-      const res = await fetch(`/api/models/alias?alias=${encodeURIComponent(alias)}`, { method: "DELETE" });
+      const res = await fetch(withBasePath(`/api/models/alias?alias=${encodeURIComponent(alias)}`), { method: "DELETE" });
       if (res.ok) await fetchData();
     } catch (e) { console.log("delete alias error:", e); }
   };
 
   const handleAddCustomModel = async (modelId) => {
     try {
-      const res = await fetch("/api/models/custom", {
+      const res = await fetch(withBasePath("/api/models/custom"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ providerAlias, id: modelId, type: effectiveType }),
@@ -175,7 +176,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
   const handleDeleteCustomModel = async (modelId) => {
     try {
       const params = new URLSearchParams({ providerAlias, id: modelId, type: effectiveType });
-      const res = await fetch(`/api/models/custom?${params}`, { method: "DELETE" });
+      const res = await fetch(withBasePath(`/api/models/custom?${params}`), { method: "DELETE" });
       if (res.ok) {
         await fetchData();
         window.dispatchEvent(new CustomEvent("customModelChanged"));
@@ -187,7 +188,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
     if (testingModelId) return;
     setTestingModelId(modelId);
     try {
-      const res = await fetch("/api/models/test", {
+      const res = await fetch(withBasePath("/api/models/test"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: `${providerAlias}/${modelId}`, kind: kindFilter }),

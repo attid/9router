@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import { useTheme } from "@/shared/hooks/useTheme";
@@ -44,7 +45,7 @@ export default function HeaderMenu({ onLogout }) {
   const handleShutdown = async () => {
     setIsShuttingDown(true);
     try {
-      await fetch("/api/version/shutdown", { method: "POST" });
+      await fetch(withBasePath("/api/version/shutdown"), { method: "POST" });
     } catch (e) {
       // Expected to fail as server shuts down; ignore error
     }

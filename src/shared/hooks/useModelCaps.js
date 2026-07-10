@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect } from "react";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 
@@ -12,7 +13,7 @@ export function useModelCaps() {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch("/api/models");
+        const res = await fetch(withBasePath("/api/models"));
         if (!res.ok) return;
         const data = await res.json();
         const full = {};

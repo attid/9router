@@ -1,4 +1,5 @@
 import pkg from "../../../package.json" with { type: "json" };
+import { apiPath } from "@/shared/utils/basePath.mjs";
 
 // App configuration
 export const APP_CONFIG = {
@@ -48,10 +49,10 @@ export const SUBSCRIPTION_CONFIG = {
 
 // API endpoints
 export const API_ENDPOINTS = {
-  users: "/api/users",
-  providers: "/api/providers",
-  payments: "/api/payments",
-  auth: "/api/auth",
+  users: apiPath("/api/users"),
+  providers: apiPath("/api/providers"),
+  payments: apiPath("/api/payments"),
+  auth: apiPath("/api/auth"),
 };
 
 export const CONSOLE_LOG_CONFIG = {

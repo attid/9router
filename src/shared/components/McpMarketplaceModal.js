@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 
-const REGISTRY_ENDPOINT = "/api/cli-tools/cowork-mcp-registry";
-const TOOLS_ENDPOINT = "/api/cli-tools/cowork-mcp-tools";
+const REGISTRY_ENDPOINT = withBasePath("/api/cli-tools/cowork-mcp-registry");
+const TOOLS_ENDPOINT = withBasePath("/api/cli-tools/cowork-mcp-tools");
 
 export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames = [] }) {
   const [servers, setServers] = useState([]);
@@ -21,7 +22,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
     if (!isOpen) return;
     if (servers.length > 0) return;
     setLoading(true);
-    fetch(REGISTRY_ENDPOINT)
+    fetch(withBasePath(REGISTRY_ENDPOINT))
       .then((r) => r.json())
       .then((d) => {
         if (d.error) setError(d.error);
@@ -51,7 +52,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
     if (toolsCache[server.url]) return;
     setToolsLoading((p) => ({ ...p, [server.url]: true }));
     try {
-      const r = await fetch(TOOLS_ENDPOINT, {
+      const r = await fetch(withBasePath(TOOLS_ENDPOINT), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: server.url }),

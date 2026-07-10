@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
@@ -32,7 +33,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
         setError(null);
         setStep("loading");
 
-        const res = await fetch(`/api/oauth/kiro/social-authorize?provider=${provider}`);
+        const res = await fetch(withBasePath(`/api/oauth/kiro/social-authorize?provider=${provider}`));
         const data = await res.json();
 
         if (!res.ok) {
@@ -83,7 +84,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
       }
 
       // Exchange code for tokens
-      const res = await fetch("/api/oauth/kiro/social-exchange", {
+      const res = await fetch(withBasePath("/api/oauth/kiro/social-exchange"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

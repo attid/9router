@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
@@ -30,7 +31,7 @@ const getPageInfo = (pathname) => {
       breadcrumbs: [
         { label: "Media Providers", href: `/dashboard/media-providers/${kindId}` },
         { label: kindConfig?.label || kindId, href: `/dashboard/media-providers/${kindId}` },
-        { label: provider?.name || providerId, image: `/providers/${providerId}.png` },
+        { label: provider?.name || providerId, image: withBasePath(`/providers/${providerId}.png`) },
       ],
     };
   }
@@ -62,7 +63,7 @@ const getPageInfo = (pathname) => {
           { label: "Providers", href: "/dashboard/providers" },
           {
             label: providerInfo.name,
-            image: `/providers/${providerInfo.id}.png`,
+            image: withBasePath(`/providers/${providerInfo.id}.png`),
           },
         ],
       };
@@ -193,7 +194,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
 
     async function loadAuthStatus() {
       try {
-        const res = await fetch("/api/auth/status", { cache: "no-store" });
+        const res = await fetch(withBasePath("/api/auth/status"), { cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
         if (!cancelled) {
@@ -216,9 +217,9 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
 
   const handleLogout = async () => {
     try {
-      const res = await fetch("/api/auth/logout", { method: "POST" });
+      const res = await fetch(withBasePath("/api/auth/logout"), { method: "POST" });
       if (res.ok) {
-        window.location.assign("/login");
+        window.location.assign(withBasePath("/login"));
       }
     } catch (err) {
       console.error("Failed to logout:", err);

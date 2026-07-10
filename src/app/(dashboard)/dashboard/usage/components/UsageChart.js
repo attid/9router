@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useCallback } from "react";
 import PropTypes from "prop-types";
 import {
@@ -30,7 +31,7 @@ export default function UsageChart({ period = "7d" }) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/usage/chart?period=${period}`);
+      const res = await fetch(withBasePath(`/api/usage/chart?period=${period}`));
       if (res.ok) {
         const json = await res.json();
         setData(json);

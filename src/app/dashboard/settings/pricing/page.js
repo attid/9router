@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Card from "@/shared/components/Card";
@@ -18,7 +19,7 @@ export default function PricingSettingsPage() {
   const loadPricing = async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/pricing");
+      const response = await fetch(withBasePath("/api/pricing"));
       if (response.ok) {
         const data = await response.json();
         setCurrentPricing(data);

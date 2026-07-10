@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { Badge, Button, Card, CardSkeleton, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
@@ -68,7 +69,7 @@ export default function ProxyPoolsPage() {
 
   const fetchProxyPools = useCallback(async () => {
     try {
-      const res = await fetch("/api/proxy-pools?includeUsage=true", { cache: "no-store" });
+      const res = await fetch(withBasePath("/api/proxy-pools?includeUsage=true"), { cache: "no-store" });
       const data = await res.json();
       if (res.ok) {
         setProxyPools(data.proxyPools || []);
@@ -119,7 +120,9 @@ export default function ProxyPoolsPage() {
     setSaving(true);
     try {
       const isEdit = !!editingProxyPool;
-      const res = await fetch(isEdit ? `/api/proxy-pools/${editingProxyPool.id}` : "/api/proxy-pools", {
+      const res = await fetch(isEdit
+        ? withBasePath(`/api/proxy-pools/${editingProxyPool.id}`)
+        : withBasePath("/api/proxy-pools"), {
         method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -147,7 +150,7 @@ export default function ProxyPoolsPage() {
       onConfirm: async () => {
         setConfirmState(null);
         try {
-          const res = await fetch(`/api/proxy-pools/${proxyPool.id}`, { method: "DELETE" });
+          const res = await fetch(withBasePath(`/api/proxy-pools/${proxyPool.id}`), { method: "DELETE" });
           if (res.ok) {
             setProxyPools((prev) => prev.filter((item) => item.id !== proxyPool.id));
             notify.success("Proxy pool deleted");
@@ -171,7 +174,7 @@ export default function ProxyPoolsPage() {
   const handleTest = async (proxyPoolId) => {
     setTestingId(proxyPoolId);
     try {
-      const res = await fetch(`/api/proxy-pools/${proxyPoolId}/test`, { method: "POST" });
+      const res = await fetch(withBasePath(`/api/proxy-pools/${proxyPoolId}/test`), { method: "POST" });
       const data = await res.json();
 
       if (!res.ok) {
@@ -193,7 +196,7 @@ export default function ProxyPoolsPage() {
     const next = !pool.isActive;
     setProxyPools((prev) => prev.map((p) => p.id === pool.id ? { ...p, isActive: next } : p));
     try {
-      const res = await fetch(`/api/proxy-pools/${pool.id}`, {
+      const res = await fetch(withBasePath(`/api/proxy-pools/${pool.id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: next }),
@@ -221,7 +224,7 @@ export default function ProxyPoolsPage() {
       let ok = 0; let failed = 0;
       for (const id of targets) {
         try {
-          const res = await fetch(`/api/proxy-pools/${id}`, {
+          const res = await fetch(withBasePath(`/api/proxy-pools/${id}`), {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ isActive }),
@@ -248,7 +251,7 @@ export default function ProxyPoolsPage() {
           let ok = 0; let blocked = 0; let failed = 0;
           for (const id of selectedIds) {
             try {
-              const res = await fetch(`/api/proxy-pools/${id}`, { method: "DELETE" });
+              const res = await fetch(withBasePath(`/api/proxy-pools/${id}`), { method: "DELETE" });
               if (res.ok) ok += 1;
               else if (res.status === 409) blocked += 1;
               else failed += 1;
@@ -281,7 +284,7 @@ export default function ProxyPoolsPage() {
         const pool = queue.shift();
         if (!pool) break;
         try {
-          const res = await fetch(`/api/proxy-pools/${pool.id}/test`, { method: "POST" });
+          const res = await fetch(withBasePath(`/api/proxy-pools/${pool.id}/test`), { method: "POST" });
           const data = await res.json();
           if (res.ok && data.ok) alive += 1; else deadIds.push(pool.id);
         } catch {
@@ -308,7 +311,7 @@ export default function ProxyPoolsPage() {
           try {
             for (const id of deadIds) {
               try {
-                await fetch(`/api/proxy-pools/${id}`, {
+                await fetch(withBasePath(`/api/proxy-pools/${id}`), {
                   method: "PUT",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ isActive: false }),
@@ -376,7 +379,7 @@ export default function ProxyPoolsPage() {
     if (!vercelForm.vercelToken.trim()) return;
     setDeploying(true);
     try {
-      const res = await fetch("/api/proxy-pools/vercel-deploy", {
+      const res = await fetch(withBasePath("/api/proxy-pools/vercel-deploy"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(vercelForm),
@@ -401,7 +404,7 @@ export default function ProxyPoolsPage() {
     if (!cloudflareForm.accountId.trim() || !cloudflareForm.apiToken.trim()) return;
     setDeploying(true);
     try {
-      const res = await fetch("/api/proxy-pools/cloudflare-deploy", {
+      const res = await fetch(withBasePath("/api/proxy-pools/cloudflare-deploy"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(cloudflareForm),
@@ -426,7 +429,7 @@ export default function ProxyPoolsPage() {
     if (!denoForm.denoToken.trim()) return;
     setDeploying(true);
     try {
-      const res = await fetch("/api/proxy-pools/deno-deploy", {
+      const res = await fetch(withBasePath("/api/proxy-pools/deno-deploy"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(denoForm),
@@ -528,7 +531,7 @@ export default function ProxyPoolsPage() {
           continue;
         }
 
-        const res = await fetch("/api/proxy-pools", {
+        const res = await fetch(withBasePath("/api/proxy-pools"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

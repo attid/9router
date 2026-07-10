@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState } from "react";
 import { Card, ModelSelectModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -225,7 +226,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
     }
     return (
       <Image
-        src={`/providers/${toolId}.png`}
+        src={withBasePath(`/providers/${toolId}.png`)}
         alt={tool.name}
         width={32}
         height={32}

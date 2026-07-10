@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { create } from "zustand";
 import { CLIENT_STORE_TTL_MS } from "@/shared/constants/config";
 
@@ -17,7 +18,7 @@ const useSettingsStore = create((set, get) => ({
     if (!force && settings && Date.now() - lastFetched < CLIENT_STORE_TTL_MS) return settings;
     set({ loading: true, error: null });
     try {
-      const res = await fetch("/api/settings");
+      const res = await fetch(withBasePath("/api/settings"));
       const data = await res.json();
       if (res.ok) {
         set({ settings: data, loading: false, lastFetched: Date.now() });
@@ -33,7 +34,7 @@ const useSettingsStore = create((set, get) => ({
   // PATCH server + merge into local cache (no extra fetch needed)
   patchSettings: async (patch) => {
     try {
-      const res = await fetch("/api/settings", {
+      const res = await fetch(withBasePath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),

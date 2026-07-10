@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useCallback } from "react";
 import { Card, Button, Input, Modal, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -52,7 +53,7 @@ export default function TokenSaverClient() {
 
   const patchSetting = async (patch) => {
     try {
-      await fetch("/api/settings", {
+      await fetch(withBasePath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
@@ -64,7 +65,7 @@ export default function TokenSaverClient() {
 
   const handleRtkEnabled = async (value) => {
     try {
-      const res = await fetch("/api/settings", {
+      const res = await fetch(withBasePath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rtkEnabled: value }),
@@ -97,7 +98,7 @@ export default function TokenSaverClient() {
   const refreshHeadroomStatus = useCallback(async () => {
     setHeadroomStatus((s) => ({ ...s, loading: true }));
     try {
-      const res = await fetch("/api/headroom/status", {
+      const res = await fetch(withBasePath("/api/headroom/status"), {
         headers: { "Cache-Control": "no-store" },
       });
       const data = await res.json();
@@ -116,7 +117,7 @@ export default function TokenSaverClient() {
     setHeadroomActionError("");
     setHeadroomActionLoading(true);
     try {
-      const res = await fetch("/api/headroom/start", { method: "POST" });
+      const res = await fetch(withBasePath("/api/headroom/start"), { method: "POST" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to start proxy");
       await refreshHeadroomStatus();
@@ -130,7 +131,7 @@ export default function TokenSaverClient() {
   const handleHeadroomStop = useCallback(async () => {
     setHeadroomActionLoading(true);
     try {
-      await fetch("/api/headroom/stop", { method: "POST" });
+      await fetch(withBasePath("/api/headroom/stop"), { method: "POST" });
       await refreshHeadroomStatus();
     } finally {
       setHeadroomActionLoading(false);
@@ -155,7 +156,7 @@ export default function TokenSaverClient() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const res = await fetch("/api/settings");
+        const res = await fetch(withBasePath("/api/settings"));
         if (res.ok) {
           const data = await res.json();
           setRtkEnabledState(data.rtkEnabled !== false);
@@ -376,7 +377,7 @@ export default function TokenSaverClient() {
           </div>
           {headroomRunning && (
             <a
-              href="/api/headroom/proxy/dashboard"
+              href={withBasePath("/api/headroom/proxy/dashboard")}
               target="_blank"
               rel="noreferrer"
               className="w-full rounded border border-border px-4 py-2 text-center text-sm hover:bg-surface-2"

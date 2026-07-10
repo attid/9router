@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import {
@@ -148,8 +149,8 @@ export default function ProvidersPage() {
     const fetchData = async () => {
       try {
         const [connectionsRes, nodesRes] = await Promise.all([
-          fetch("/api/providers"),
-          fetch("/api/provider-nodes"),
+          fetch(withBasePath("/api/providers")),
+          fetch(withBasePath("/api/provider-nodes")),
         ]);
         const connectionsData = await connectionsRes.json();
         const nodesData = await nodesRes.json();
@@ -221,7 +222,7 @@ export default function ProvidersPage() {
     );
     await Promise.allSettled(
       providerConns.map((c) =>
-        fetch(`/api/providers/${c.id}`, {
+        fetch(withBasePath(`/api/providers/${c.id}`), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ isActive: newActive }),
@@ -235,7 +236,7 @@ export default function ProvidersPage() {
     setTestingMode(mode === "provider" ? providerId : mode);
     setTestResults(null);
     try {
-      const res = await fetch("/api/providers/test-batch", {
+      const res = await fetch(withBasePath("/api/providers/test-batch"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode, providerId }),
@@ -651,7 +652,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
               }}
             >
               <ProviderIcon
-                src={`/providers/${provider.id}.png`}
+                src={withBasePath(`/providers/${provider.id}.png`)}
                 alt={provider.name}
                 size={30}
                 className="object-contain rounded-lg max-w-[32px] max-h-[32px]"
@@ -758,10 +759,10 @@ function ApiKeyProviderCard({
   const getIconPath = () => {
     if (isCompatible)
       return provider.apiType === "responses"
-        ? "/providers/oai-r.png"
-        : "/providers/oai-cc.png";
-    if (isAnthropicCompatible) return "/providers/anthropic-m.png";
-    return `/providers/${provider.id}.png`;
+        ? withBasePath("/providers/oai-r.png")
+        : withBasePath("/providers/oai-cc.png");
+    if (isAnthropicCompatible) return withBasePath("/providers/anthropic-m.png");
+    return withBasePath(`/providers/${provider.id}.png`);
   };
 
   return (

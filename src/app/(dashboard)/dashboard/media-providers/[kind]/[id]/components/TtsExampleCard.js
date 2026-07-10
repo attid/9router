@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect } from "react";
 import { Card } from "@/shared/components";
 import { AI_PROVIDERS, getProviderAlias } from "@/shared/constants/providers";
@@ -64,11 +65,11 @@ export function TtsExampleCard({ providerId }) {
 
   useEffect(() => {
     setLocalEndpoint(window.location.origin);
-    fetch("/api/keys")
+    fetch(withBasePath("/api/keys"))
       .then((r) => r.json())
       .then((d) => { setApiKey((d.keys || []).find((k) => k.isActive !== false)?.key || ""); })
       .catch(() => {});
-    fetch("/api/tunnel/status")
+    fetch(withBasePath("/api/tunnel/status"))
       .then((r) => r.json())
       .then((d) => { if (d.publicUrl) setTunnelEndpoint(d.publicUrl); })
       .catch(() => {});
@@ -136,8 +137,8 @@ export function TtsExampleCard({ providerId }) {
         // Use provider-specific apiEndpoint if available, else default to edge-tts voices API
         const url = config.apiEndpoint
           ? config.apiEndpoint
-          : `/api/media-providers/tts/voices?provider=${providerId === "local-device" ? "local-device" : "edge-tts"}`;
-        const r = await fetch(url);
+          : withBasePath(`/api/media-providers/tts/voices?provider=${providerId === "local-device" ? "local-device" : "edge-tts"}`);
+        const r = await fetch(withBasePath(url));
         const d = await r.json();
         if (d.error) { setModalError(d.error); return; }
         setLanguages(d.languages || []);
@@ -202,8 +203,8 @@ export function TtsExampleCard({ providerId }) {
     try {
       const headers = { "Content-Type": "application/json" };
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-      const url = `/api/v1/audio/speech${responseFormat === "json" ? "?response_format=json" : ""}`;
-      const res = await fetch(url, {
+      const url = withBasePath(`/api/v1/audio/speech${responseFormat === "json" ? "?response_format=json" : ""}`);
+      const res = await fetch(withBasePath(url), {
         method: "POST",
         headers,
         body: JSON.stringify({ ...ttsBody, input: input.trim() }),
@@ -218,7 +219,7 @@ export function TtsExampleCard({ providerId }) {
       if (responseFormat === "json") {
         const data = await res.json();
         setJsonResponse(data); // Store full JSON response
-        const audioBlob = await fetch(`data:audio/mp3;base64,${data.audio}`).then(r => r.blob());
+        const audioBlob = await fetch(withBasePath(`data:audio/mp3;base64,${data.audio}`)).then(r => r.blob());
         setAudioUrl(URL.createObjectURL(audioBlob));
       } else {
         const blob = await res.blob();

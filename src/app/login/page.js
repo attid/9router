@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect } from "react";
 import { Card, Button, Input } from "@/shared/components";
 
@@ -30,7 +31,7 @@ export default function LoginPage() {
       const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
 
       try {
-        const res = await fetch(`${baseUrl}/api/auth/status`, {
+        const res = await fetch(`${baseUrl}${withBasePath("/api/auth/status")}`, {
           signal: controller.signal,
         });
         clearTimeout(timeoutId);
@@ -38,7 +39,7 @@ export default function LoginPage() {
         if (res.ok) {
           const data = await res.json();
           if (data.requireLogin === false) {
-            window.location.assign("/dashboard");
+            window.location.assign(withBasePath("/dashboard"));
             return;
           }
           setHasPassword(!!data.hasPassword);
@@ -64,7 +65,7 @@ export default function LoginPage() {
     setResetHint("");
 
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch(withBasePath("/api/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
@@ -76,7 +77,7 @@ export default function LoginPage() {
           setMustChange(true);
           return;
         }
-        window.location.assign("/dashboard");
+        window.location.assign(withBasePath("/dashboard"));
       } else {
         const data = await res.json();
         setError(data.error || "Invalid password");
@@ -96,13 +97,13 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/settings", {
+      const res = await fetch(withBasePath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ currentPassword: password, newPassword }),
       });
       if (res.ok) {
-        window.location.assign("/dashboard");
+        window.location.assign(withBasePath("/dashboard"));
       } else {
         const data = await res.json();
         setError(data.error || "Failed to set password");
@@ -115,7 +116,7 @@ export default function LoginPage() {
   };
 
   const handleOidcLogin = () => {
-    window.location.href = "/api/auth/oidc/start";
+    window.location.href = withBasePath("/api/auth/oidc/start");
   };
 
   const oidcAvailable = oidcConfigured && ["oidc", "both"].includes(authMode);

@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Modal, Input, Button, Badge } from "@/shared/components";
@@ -40,7 +41,9 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
     if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
     setSubmitting(true);
     try {
-      const url = isEdit ? `/api/provider-nodes/${node.id}` : "/api/provider-nodes";
+      const url = isEdit
+        ? withBasePath(`/api/provider-nodes/${node.id}`)
+        : withBasePath("/api/provider-nodes");
       const method = isEdit ? "PUT" : "POST";
       const payload = {
         name: formData.name,
@@ -49,7 +52,7 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
       };
       if (!isEdit) payload.type = "custom-embedding";
 
-      const res = await fetch(url, {
+      const res = await fetch(withBasePath(url), {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -69,7 +72,7 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
   const handleValidate = async () => {
     setValidating(true);
     try {
-      const res = await fetch("/api/provider-nodes/validate", {
+      const res = await fetch(withBasePath("/api/provider-nodes/validate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

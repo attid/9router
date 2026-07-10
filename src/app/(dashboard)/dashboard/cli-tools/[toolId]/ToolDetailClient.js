@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { CardSkeleton } from "@/shared/components";
@@ -31,10 +32,10 @@ export default function ToolDetailClient({ toolId, machineId }) {
     (async () => {
       try {
         const [provRes, settingsRes, tunnelRes, keysRes] = await Promise.all([
-          fetch("/api/providers"),
-          fetch("/api/settings"),
-          fetch("/api/tunnel/status"),
-          fetch("/api/keys"),
+          fetch(withBasePath("/api/providers")),
+          fetch(withBasePath("/api/settings")),
+          fetch(withBasePath("/api/tunnel/status")),
+          fetch(withBasePath("/api/keys")),
         ]);
         if (!mounted) return;
         if (provRes.ok) {
