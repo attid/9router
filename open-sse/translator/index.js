@@ -274,6 +274,7 @@ import "./request/openai-to-commandcode.js";
 import "./request/claude-to-kiro.js";
 import "./response/claude-to-openai.js";
 import "./response/openai-to-claude.js";
+import "./response/openai-to-gemini.js";
 import "./response/gemini-to-openai.js";
 import "./response/openai-to-antigravity.js";
 import "./response/openai-responses.js";

@@ -60,7 +60,7 @@ export function geminiToOpenAIRequest(model, body, stream) {
             function: {
               name: func.name,
               description: func.description || "",
-              parameters: func.parameters || { type: "object", properties: {} }
+              parameters: func.parametersJsonSchema || func.parameters || { type: "object", properties: {} }
             }
           });
         }
@@ -110,10 +110,12 @@ function convertGeminiContent(content) {
     }
 
     if (part.functionResponse) {
+      const response = part.functionResponse.response;
+      const content = response?.output ?? response?.result ?? response ?? {};
       return {
         role: ROLE.TOOL,
         tool_call_id: part.functionResponse.id || `call_${part.functionResponse.name}`,
-        content: JSON.stringify(part.functionResponse.response?.result || part.functionResponse.response || {})
+        content: typeof content === "string" ? content : JSON.stringify(content)
       };
     }
   }
@@ -149,4 +151,3 @@ function extractGeminiText(content) {
 // Register
 register(FORMATS.GEMINI, FORMATS.OPENAI, geminiToOpenAIRequest, null);
 register(FORMATS.GEMINI_CLI, FORMATS.OPENAI, geminiToOpenAIRequest, null);
-
