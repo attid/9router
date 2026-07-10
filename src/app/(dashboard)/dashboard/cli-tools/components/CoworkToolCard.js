@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
+import { apiPath as withBasePath, joinUrlPath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect } from "react";
 import { Card, Button, ManualConfigModal, ComboFormModal, McpMarketplaceModal, ModelSelectModal } from "@/shared/components";
 import Image from "next/image";
@@ -13,7 +13,7 @@ const stripV1 = (url) => (url || "").replace(/\/v1\/?$/, "");
 const ensureV1 = (url) => {
   const trimmed = (url || "").replace(/\/+$/, "");
   if (!trimmed) return "";
-  return /\/v1$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
+  return /\/v1$/.test(trimmed) ? trimmed : joinUrlPath(trimmed, "/v1");
 };
 
 export default function CoworkToolCard({

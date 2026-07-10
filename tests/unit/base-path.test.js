@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { apiPath, normalizeBasePath } from "../../src/shared/utils/basePath.mjs";
+import { apiPath, appUrl, normalizeBasePath } from "../../src/shared/utils/basePath.mjs";
+import { clientPingUrl } from "../../src/app/(dashboard)/dashboard/endpoint/endpointPing.js";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 describe("normalizeBasePath", () => {
   it.each([
@@ -39,5 +45,36 @@ describe("apiPath", () => {
     "blob:https://example.com/id",
   ])("leaves non-local URL %s unchanged", (url) => {
     expect(apiPath(url, "/9router")).toBe(url);
+  });
+});
+
+describe("appUrl", () => {
+  it.each([
+    ["/v1", "http://localhost:20128", "/nine", "http://localhost:20128/nine/v1"],
+    ["/api/health", "https://demo.trycloudflare.com/", "/nine", "https://demo.trycloudflare.com/nine/api/health"],
+    ["/callback?code=...", "http://localhost:20128", "/nine", "http://localhost:20128/nine/callback?code=..."],
+    ["", "http://127.0.0.1:20128/", "/nine", "http://127.0.0.1:20128/nine"],
+    ["/api/health", "https://example.com/nine/", "/nine", "https://example.com/nine/api/health"],
+  ])("joins %s to %s with base path %s", (pathname, origin, basePath, expected) => {
+    expect(appUrl(pathname, origin, basePath)).toBe(expected);
+  });
+
+  it("does not alter an external absolute URL", () => {
+    expect(appUrl("https://api.openai.com/v1", "http://localhost:20128", "/nine"))
+      .toBe("https://api.openai.com/v1");
+  });
+});
+
+describe("endpoint health probes", () => {
+  it("adds the configured base path between the tunnel origin and health path", async () => {
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/nine");
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await clientPingUrl("https://demo.trycloudflare.com/")).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://demo.trycloudflare.com/nine/api/health",
+      expect.objectContaining({ mode: "cors", cache: "no-store" })
+    );
   });
 });

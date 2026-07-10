@@ -1,4 +1,5 @@
 import { CLIENT_PING_TIMEOUT_MS } from "./endpointConstants";
+import { appUrl } from "@/shared/utils/basePath.mjs";
 
 // Browser-side health probe: must reach origin (not just CF/TS edge).
 // cors mode → res.ok=false for 5xx (e.g. Cloudflare 530 when origin dead).
@@ -6,7 +7,7 @@ import { CLIENT_PING_TIMEOUT_MS } from "./endpointConstants";
 export async function clientPingUrl(url) {
   if (!url) return false;
   try {
-    const res = await fetch(`${url}/api/health`, {
+    const res = await fetch(appUrl("/api/health", url), {
       mode: "cors",
       cache: "no-store",
       signal: AbortSignal.timeout(CLIENT_PING_TIMEOUT_MS),

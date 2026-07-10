@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
+import { apiPath as withBasePath, appUrl, joinUrlPath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
@@ -101,14 +101,14 @@ export default function DeepSeekTuiToolCard({
 
   const getLocalBaseUrl = () => {
     if (typeof window !== "undefined") {
-      return normalizeLocalhost(window.location.origin);
+      return appUrl("", normalizeLocalhost(window.location.origin));
     }
-    return "http://127.0.0.1:20128";
+    return appUrl("", "http://127.0.0.1:20128");
   };
 
   const getEffectiveBaseUrl = () => {
     const url = customBaseUrl || getLocalBaseUrl();
-    return url.endsWith("/v1") ? url : `${url}/v1`;
+    return url.endsWith("/v1") ? url : joinUrlPath(url, "/v1");
   };
 
   const handleApply = async () => {

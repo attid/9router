@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
+import { apiPath as withBasePath, appUrl } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
@@ -26,7 +26,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
   // State for client-only values to avoid hydration mismatch
   const [isLocalhost, setIsLocalhost] = useState(false);
-  const [placeholderUrl, setPlaceholderUrl] = useState("/callback?code=...");
+  const [placeholderUrl, setPlaceholderUrl] = useState(withBasePath("/callback?code=..."));
   const callbackProcessedRef = useRef(false);
 
   // Detect if running on localhost (client-side only)
@@ -35,7 +35,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setIsLocalhost(
         window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
       );
-      setPlaceholderUrl(`${window.location.origin}/callback?code=...`);
+      setPlaceholderUrl(appUrl("/callback?code=...", window.location.origin));
     }
   }, []);
 
@@ -221,7 +221,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       } else if (provider === "xai") {
         redirectUri = "http://127.0.0.1:56121/callback";
       } else {
-        redirectUri = `http://localhost:${appPort}/callback`;
+        redirectUri = appUrl("/callback", `http://localhost:${appPort}`);
       }
 
       // Build authorize URL first to get codeVerifier/state for codex server-side mode

@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
+import { apiPath as withBasePath, appUrl, joinUrlPath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect } from "react";
 import { Card } from "@/shared/components";
 import { MEDIA_PROVIDER_KINDS, getProviderAlias, resolveProviderId } from "@/shared/constants/providers";
@@ -71,14 +71,14 @@ export function GenericExampleCard({ providerId, kind }) {
   const { copied: copiedRes, copy: copyRes } = useCopyToClipboard();
 
   useEffect(() => {
-    setLocalEndpoint(window.location.origin);
+    setLocalEndpoint(appUrl("", window.location.origin));
     fetch(withBasePath("/api/keys"))
       .then((r) => r.json())
       .then((d) => { setApiKey((d.keys || []).find((k) => k.isActive !== false)?.key || ""); })
       .catch(() => {});
     fetch(withBasePath("/api/tunnel/status"))
       .then((r) => r.json())
-      .then((d) => { if (d.publicUrl) setTunnelEndpoint(d.publicUrl); })
+      .then((d) => { if (d.publicUrl) setTunnelEndpoint(appUrl("", d.publicUrl)); })
       .catch(() => {});
     // Load active connections of this provider for pinning
     fetch(withBasePath("/api/providers/client"))
@@ -126,7 +126,7 @@ export function GenericExampleCard({ providerId, kind }) {
   const useStreaming = kind === "image" && providerId === "codex" && !wantBinary;
   const apiPathWithQuery = `${apiPath}${wantBinary ? "?response_format=binary" : ""}`;
   const headersPreview = `-H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${apiKey || "YOUR_KEY"}"${pinnedConnectionId ? ` \\\n  -H "x-connection-id: ${pinnedConnectionId}"` : ""}${useStreaming ? ` \\\n  -H "Accept: text/event-stream"` : ""}`;
-  const curlSnippet = `curl -X ${kindConfig.endpoint.method} ${endpoint}${apiPathWithQuery} \\
+  const curlSnippet = `curl -X ${kindConfig.endpoint.method} ${joinUrlPath(endpoint, apiPathWithQuery)} \\
   ${headersPreview.replace(/\\\n  /g, "\\\n  ")} \\
   -d '${JSON.stringify(requestBody)}'${wantBinary ? " \\\n  --output image.png" : ""}`;
 
@@ -256,7 +256,7 @@ export function GenericExampleCard({ providerId, kind }) {
         <Row label="Endpoint">
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             <span className="w-full min-w-0 flex-1 px-3 py-1.5 text-sm font-mono text-text-main bg-sidebar rounded-lg truncate">
-              {endpoint}{apiPath}
+              {joinUrlPath(endpoint, apiPath)}
             </span>
             {tunnelEndpoint && (
               <button

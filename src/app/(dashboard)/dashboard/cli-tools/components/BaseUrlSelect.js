@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
+import { appUrl, joinUrlPath } from "@/shared/utils/basePath.mjs";
 
 const STORAGE_KEY = "9router.cliToolEndpointPresets";
 const CUSTOM_VALUE = "__custom__";
@@ -10,7 +11,7 @@ const SAVE_VALUE = "__save__";
 const ensureV1 = (url) => {
   const trimmed = (url || "").replace(/\/+$/, "");
   if (!trimmed) return "";
-  return /\/v1$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
+  return /\/v1$/.test(trimmed) ? trimmed : joinUrlPath(trimmed, "/v1");
 };
 
 const readSavedPresets = () => {
@@ -33,15 +34,15 @@ const buildOptions = ({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tai
   const opts = [];
   const wrap = (url) => (withV1 ? ensureV1(url) : (url || "").replace(/\/+$/, ""));
   if (!requiresExternalUrl) {
-    const localUrl = wrap(`http://127.0.0.1:${UPDATER_CONFIG.appPort}`);
+    const localUrl = wrap(appUrl("", `http://127.0.0.1:${UPDATER_CONFIG.appPort}`));
     opts.push({ value: "local", label: localUrl, url: localUrl });
   }
   if (tunnelEnabled && tunnelPublicUrl) {
-    const u = wrap(tunnelPublicUrl);
+    const u = wrap(appUrl("", tunnelPublicUrl));
     opts.push({ value: "tunnel", label: u, url: u });
   }
   if (tailscaleEnabled && tailscaleUrl) {
-    const u = wrap(tailscaleUrl);
+    const u = wrap(appUrl("", tailscaleUrl));
     opts.push({ value: "tailscale", label: u, url: u });
   }
   if (cloudEnabled && cloudUrl) {

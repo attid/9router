@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
+import { apiPath as withBasePath, joinUrlPath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
@@ -62,11 +62,11 @@ export default function ClineToolCard({ tool, isExpanded, onToggle, baseUrl, api
   const configStatus = getConfigStatus();
 
   const getEffectiveBaseUrl = () => {
-    const url = customBaseUrl || `${baseUrl}/v1`;
-    return url.endsWith("/v1") ? url : `${url}/v1`;
+    const url = customBaseUrl || joinUrlPath(baseUrl, "/v1");
+    return url.endsWith("/v1") ? url : joinUrlPath(url, "/v1");
   };
 
-  const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
+  const getDisplayUrl = () => customBaseUrl || joinUrlPath(baseUrl, "/v1");
 
   const checkStatus = async () => {
     setChecking(true);

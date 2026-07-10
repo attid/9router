@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
+import { apiPath as withBasePath, joinUrlPath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal, Tooltip } from "@/shared/components";
 import Image from "next/image";
@@ -133,12 +133,12 @@ export default function ClaudeToolCard({
 
   const getEffectiveBaseUrl = () => {
     const url = customBaseUrl || baseUrl;
-    return url.endsWith("/v1") ? url : `${url}/v1`;
+    return url.endsWith("/v1") ? url : joinUrlPath(url, "/v1");
   };
 
   const getDisplayUrl = () => {
     const url = customBaseUrl || baseUrl;
-    return url.endsWith("/v1") ? url : `${url}/v1`;
+    return url.endsWith("/v1") ? url : joinUrlPath(url, "/v1");
   };
 
   const handleApplySettings = async () => {

@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getSettings } from "@/lib/localDb";
 import { fetchOidcDiscovery, getPublicOrigin, probeOidcClientSecret } from "@/lib/auth/oidc";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { appUrl } from "@/shared/utils/basePath.mjs";
 
 async function canAccessTestRoute() {
   const settings = await getSettings();
@@ -39,7 +40,7 @@ export async function POST(request) {
     }
 
     const discovery = await fetchOidcDiscovery(issuerUrl);
-    const redirectUri = `${getPublicOrigin(request)}/api/auth/oidc/callback`;
+    const redirectUri = appUrl("/api/auth/oidc/callback", getPublicOrigin(request));
     const secretProbe = await probeOidcClientSecret({
       tokenEndpoint: discovery.token_endpoint,
       clientId,

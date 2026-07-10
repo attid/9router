@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
+import { apiPath as withBasePath, appUrl } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
@@ -273,7 +273,7 @@ export default function APIPageClient({ machineId }) {
   const pingTunnelHealth = async (...urls) => {
     setTunnelLoading(true);
     setTunnelProgress("Waiting for tunnel ready...");
-    const targets = urls.filter(Boolean).map((u) => `${u}/api/health`);
+    const targets = urls.filter(Boolean).map((u) => appUrl("/api/health", u));
     const start = Date.now();
     while (Date.now() - start < TUNNEL_PING_MAX_MS) {
       await new Promise((r) => setTimeout(r, TUNNEL_PING_INTERVAL_MS));
@@ -455,7 +455,7 @@ export default function APIPageClient({ machineId }) {
   // Ping Tailscale health until reachable
   const pingTsHealth = async (url) => {
     setTsProgress("Waiting for Tailscale ready...");
-    const healthUrl = `${url}/api/health`;
+    const healthUrl = appUrl("/api/health", url);
     const start = Date.now();
     while (Date.now() - start < TUNNEL_PING_MAX_MS) {
       await new Promise((r) => setTimeout(r, TUNNEL_PING_INTERVAL_MS));
@@ -682,12 +682,12 @@ export default function APIPageClient({ machineId }) {
     });
   };
 
-  const [baseUrl, setBaseUrl] = useState("/v1");
+  const [baseUrl, setBaseUrl] = useState(withBasePath("/v1"));
 
   // Hydration fix: Only access window on client side
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setBaseUrl(`${window.location.origin}/v1`);
+      setBaseUrl(appUrl("/v1", window.location.origin));
     }
   }, []);
 
@@ -728,9 +728,9 @@ export default function APIPageClient({ machineId }) {
             }`}>Tunnel</span>
             {tunnelEnabled && !tunnelLoading && tunnelReachable ? (
               <>
-                <Input value={`${tunnelPublicUrl || tunnelUrl}/v1`} readOnly className="flex-1 font-mono text-sm" />
+                <Input value={appUrl("/v1", tunnelPublicUrl || tunnelUrl)} readOnly className="flex-1 font-mono text-sm" />
                 <button
-                  onClick={() => copy(`${tunnelPublicUrl || tunnelUrl}/v1`, "tunnel_url")}
+                  onClick={() => copy(appUrl("/v1", tunnelPublicUrl || tunnelUrl), "tunnel_url")}
                   className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors shrink-0"
                 >
                   <span className="material-symbols-outlined text-[18px]">{copied === "tunnel_url" ? "check" : "content_copy"}</span>
@@ -820,9 +820,9 @@ export default function APIPageClient({ machineId }) {
             }`}>Tailscale</span>
             {tsEnabled && !tsLoading && tsReachable ? (
               <>
-                <Input value={`${tsUrl}/v1`} readOnly className="flex-1 font-mono text-sm" />
+                <Input value={appUrl("/v1", tsUrl)} readOnly className="flex-1 font-mono text-sm" />
                 <button
-                  onClick={() => copy(`${tsUrl}/v1`, "ts_url")}
+                  onClick={() => copy(appUrl("/v1", tsUrl), "ts_url")}
                   className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors shrink-0"
                 >
                   <span className="material-symbols-outlined text-[18px]">{copied === "ts_url" ? "check" : "content_copy"}</span>

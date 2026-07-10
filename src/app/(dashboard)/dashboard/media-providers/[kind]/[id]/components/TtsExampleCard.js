@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
+import { apiPath as withBasePath, appUrl, joinUrlPath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect } from "react";
 import { Card } from "@/shared/components";
 import { AI_PROVIDERS, getProviderAlias } from "@/shared/constants/providers";
@@ -64,14 +64,14 @@ export function TtsExampleCard({ providerId }) {
   const [languageHint, setLanguageHint]     = useState("");
 
   useEffect(() => {
-    setLocalEndpoint(window.location.origin);
+    setLocalEndpoint(appUrl("", window.location.origin));
     fetch(withBasePath("/api/keys"))
       .then((r) => r.json())
       .then((d) => { setApiKey((d.keys || []).find((k) => k.isActive !== false)?.key || ""); })
       .catch(() => {});
     fetch(withBasePath("/api/tunnel/status"))
       .then((r) => r.json())
-      .then((d) => { if (d.publicUrl) setTunnelEndpoint(d.publicUrl); })
+      .then((d) => { if (d.publicUrl) setTunnelEndpoint(appUrl("", d.publicUrl)); })
       .catch(() => {});
 
     // Pre-select default voice based on provider config
@@ -187,7 +187,7 @@ export function TtsExampleCard({ providerId }) {
     if (config.hasLanguageHint && languageHint) b.language = languageHint;
     return b;
   })();
-  const curlSnippet = `curl -X POST ${endpoint}/v1/audio/speech${responseFormat === "json" ? "?response_format=json" : ""} \\
+  const curlSnippet = `curl -X POST ${joinUrlPath(endpoint, "/v1/audio/speech")}${responseFormat === "json" ? "?response_format=json" : ""} \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${apiKey || "YOUR_KEY"}" \\
   -d '${JSON.stringify(ttsBody)}' \\
@@ -242,7 +242,7 @@ export function TtsExampleCard({ providerId }) {
           <Row label="Endpoint">
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
               <span className="w-full min-w-0 flex-1 px-3 py-1.5 text-sm font-mono text-text-main bg-sidebar rounded-lg truncate">
-                {endpoint}/v1/audio/speech
+                {joinUrlPath(endpoint, "/v1/audio/speech")}
               </span>
               {tunnelEndpoint && (
                 <button

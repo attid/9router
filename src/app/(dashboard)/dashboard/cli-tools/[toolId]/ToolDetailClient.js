@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
+import { apiPath as withBasePath, appUrl } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { CardSkeleton } from "@/shared/components";
@@ -94,10 +94,10 @@ export default function ToolDetailClient({ toolId, machineId }) {
   }, []);
 
   const getBaseUrl = () => {
-    if (tunnelEnabled && tunnelPublicUrl) return tunnelPublicUrl;
+    if (tunnelEnabled && tunnelPublicUrl) return appUrl("", tunnelPublicUrl);
     if (cloudEnabled && CLOUD_URL) return CLOUD_URL;
-    if (typeof window !== "undefined") return window.location.origin;
-    return "http://localhost:20128";
+    if (typeof window !== "undefined") return appUrl("", window.location.origin);
+    return appUrl("", "http://localhost:20128");
   };
 
   const renderToolCard = () => {

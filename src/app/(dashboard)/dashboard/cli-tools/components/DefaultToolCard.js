@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
+import { apiPath as withBasePath, joinUrlPath } from "@/shared/utils/basePath.mjs";
 import { useState } from "react";
 import { Card, ModelSelectModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -26,7 +26,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
     const normalizedBaseUrl = baseUrl || "http://localhost:20128";
     const baseUrlWithV1 = normalizedBaseUrl.endsWith("/v1") 
       ? normalizedBaseUrl 
-      : `${normalizedBaseUrl}/v1`;
+      : joinUrlPath(normalizedBaseUrl, "/v1");
     
     return text
       .replace(/\{\{baseUrl\}\}/g, baseUrlWithV1)
@@ -269,4 +269,3 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
     </Card>
   );
 }
-

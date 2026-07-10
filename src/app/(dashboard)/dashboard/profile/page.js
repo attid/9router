@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
+import { apiPath as withBasePath, appUrl } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useRef } from "react";
 import { Card, Button, Toggle, Input } from "@/shared/components";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
@@ -92,7 +92,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setOidcRedirectUri(`${window.location.origin}${withBasePath("/api/auth/oidc/callback")}`);
+      setOidcRedirectUri(appUrl("/api/auth/oidc/callback", window.location.origin));
     }
   }, []);
 
