@@ -12,6 +12,16 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - name: default
+            suffix: ""
+            base_path: ""
+          - name: base-9router
+            suffix: "-9router"
+            base_path: "/9router"
     permissions:
       contents: read
       packages: write
@@ -33,27 +43,25 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.GHCR_IMAGE }}
+          flavor: |
+            suffix=${{ matrix.variant.suffix }},onlatest=true
           tags: |
             type=sha,prefix=
-            type=sha,prefix=,suffix=-9router
             type=semver,pattern={{version}}
-            type=semver,pattern={{version}},suffix=-9router
             type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}.{{minor}},suffix=-9router
             type=raw,value=latest
-            type=raw,value=latest-9router
 
-      - name: Build and push
+      - name: Build and push (${{ matrix.variant.name }})
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          build-args: |
-            BASE_PATH=/9router
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache
-          cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache,mode=max
-          platforms: linux/amd64,linux/arm64
+          build-args: |
+            BASE_PATH=${{ matrix.variant.base_path }}
+          cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache${{ matrix.variant.suffix }}
+          cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache${{ matrix.variant.suffix }},mode=max
+          platforms: linux/amd64
           provenance: false
           sbom: false
