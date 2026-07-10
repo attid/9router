@@ -60,11 +60,44 @@ describe("Schema migrations", () => {
     expect(JSON.parse(settings.data)).toEqual({ foo: "bar" });
   });
 
+  it("schema v1 → adds allowedModels without losing API keys", async () => {
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const db = await getAdapter();
+    db.run(
+      `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
+      ["v1-key", "sk-v1", "Version one", "machine-v1", 1, new Date().toISOString()]
+    );
+    const initialColumns = db.all(`PRAGMA table_info(apiKeys)`).map((column) => column.name);
+    if (initialColumns.includes("allowedModels")) {
+      db.exec(`ALTER TABLE apiKeys DROP COLUMN allowedModels`);
+    }
+    db.run(`UPDATE _meta SET value = '1' WHERE key = 'schemaVersion'`);
+    db.close?.();
+
+    delete global._dbAdapter;
+    vi.resetModules();
+    const { getAdapter: getAdapter2 } = await import("@/lib/db/driver.js");
+    const db2 = await getAdapter2();
+
+    const columns = db2.all(`PRAGMA table_info(apiKeys)`).map((column) => column.name);
+    expect(columns).toContain("allowedModels");
+    expect(db2.get(`SELECT key, allowedModels FROM apiKeys WHERE id = ?`, ["v1-key"])).toEqual({
+      key: "sk-v1",
+      allowedModels: null,
+    });
+  });
+
   it("fresh DB + legacy db.json → imports data automatically", async () => {
     // Simulate user upgrading: place legacy JSON in DATA_DIR before first boot
     const legacy = {
       settings: { foo: "legacy-value" },
-      apiKeys: [{ id: "k1", key: "abc", name: "test", createdAt: new Date().toISOString() }],
+      apiKeys: [{
+        id: "k1",
+        key: "abc",
+        name: "test",
+        allowedModels: ["openai/gpt-5"],
+        createdAt: new Date().toISOString(),
+      }],
       modelAliases: { "gpt-4": "gpt-4-turbo" },
     };
     fs.writeFileSync(path.join(tempDir, "db.json"), JSON.stringify(legacy));
@@ -78,6 +111,7 @@ describe("Schema migrations", () => {
     const keys = db.all(`SELECT * FROM apiKeys`);
     expect(keys).toHaveLength(1);
     expect(keys[0].key).toBe("abc");
+    expect(JSON.parse(keys[0].allowedModels)).toEqual(["openai/gpt-5"]);
 
     const aliases = db.all(`SELECT * FROM kv WHERE scope='modelAliases'`);
     expect(aliases).toHaveLength(1);

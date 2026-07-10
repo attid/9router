@@ -1,5 +1,14 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
+import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+
+function normalizeAllowedModels(value) {
+  return Array.isArray(value) && value.length > 0 ? value : null;
+}
+
+function serializeAllowedModels(value) {
+  return value ? stringifyJson(value) : null;
+}
 
 function rowToKey(row) {
   if (!row) return null;
@@ -9,6 +18,7 @@ function rowToKey(row) {
     name: row.name,
     machineId: row.machineId,
     isActive: row.isActive === 1 || row.isActive === true,
+    allowedModels: parseJson(row.allowedModels, null),
     createdAt: row.createdAt,
   };
 }
@@ -25,7 +35,7 @@ export async function getApiKeyById(id) {
   return rowToKey(row);
 }
 
-export async function createApiKey(name, machineId) {
+export async function createApiKey(name, machineId, allowedModels = null) {
   if (!machineId) throw new Error("machineId is required");
   const db = await getAdapter();
   const { generateApiKeyWithMachine } = await import("@/shared/utils/apiKey");
@@ -36,11 +46,12 @@ export async function createApiKey(name, machineId) {
     key: result.key,
     machineId,
     isActive: true,
+    allowedModels: normalizeAllowedModels(allowedModels),
     createdAt: new Date().toISOString(),
   };
   db.run(
-    `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
-    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt]
+    `INSERT INTO apiKeys(id, key, name, machineId, isActive, allowedModels, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, serializeAllowedModels(apiKey.allowedModels), apiKey.createdAt]
   );
   return apiKey;
 }
@@ -52,9 +63,12 @@ export async function updateApiKey(id, data) {
     const row = db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
     if (!row) return;
     const merged = { ...rowToKey(row), ...data };
+    if (data.allowedModels !== undefined) {
+      merged.allowedModels = normalizeAllowedModels(data.allowedModels);
+    }
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, allowedModels = ? WHERE id = ?`,
+      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, serializeAllowedModels(merged.allowedModels), id]
     );
     result = merged;
   });
@@ -72,4 +86,10 @@ export async function validateApiKey(key) {
   const row = db.get(`SELECT isActive FROM apiKeys WHERE key = ?`, [key]);
   if (!row) return false;
   return row.isActive === 1 || row.isActive === true;
+}
+
+export async function getApiKeyByValue(key) {
+  const db = await getAdapter();
+  const row = db.get(`SELECT * FROM apiKeys WHERE key = ?`, [key]);
+  return rowToKey(row);
 }

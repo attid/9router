@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import ModelSelectModal from "@/shared/components/ModelSelectModal";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   TUNNEL_BENEFITS,
@@ -22,8 +23,13 @@ export default function APIPageClient({ machineId }) {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyModels, setNewKeyModels] = useState([]);
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  const [showModelSelect, setShowModelSelect] = useState(false);
+  const [modelSelectTarget, setModelSelectTarget] = useState(null);
+  const [activeProviders, setActiveProviders] = useState([]);
+  const [modelAliases, setModelAliases] = useState({});
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -100,6 +106,7 @@ export default function APIPageClient({ machineId }) {
   useEffect(() => {
     fetchData();
     loadSettings();
+    loadModelSelectData();
   }, []);
 
   // Status poll: only while degraded (not yet reachable). Stop once healthy to avoid spam.
@@ -264,6 +271,25 @@ export default function APIPageClient({ machineId }) {
       console.log("Error fetching data:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadModelSelectData = async () => {
+    try {
+      const [providersRes, aliasesRes] = await Promise.all([
+        fetch("/api/providers"),
+        fetch("/api/models/alias"),
+      ]);
+      if (providersRes.ok) {
+        const data = await providersRes.json();
+        setActiveProviders((data.connections || []).filter((connection) => connection.isActive !== false));
+      }
+      if (aliasesRes.ok) {
+        const data = await aliasesRes.json();
+        setModelAliases(data.aliases || {});
+      }
+    } catch (error) {
+      console.log("Error loading model selector data:", error);
     }
   };
 
@@ -610,11 +636,12 @@ export default function APIPageClient({ machineId }) {
   const handleCreateKey = async () => {
     if (!newKeyName.trim()) return;
 
+    const allowedModels = newKeyModels.length > 0 ? newKeyModels : null;
     try {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({ name: newKeyName, allowedModels }),
       });
       const data = await res.json();
 
@@ -622,6 +649,7 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewKeyModels([]);
         setShowAddModal(false);
       }
     } catch (error) {
@@ -665,6 +693,46 @@ export default function APIPageClient({ machineId }) {
     } catch (error) {
       console.log("Error toggling key:", error);
     }
+  };
+
+  const selectedAllowedModels = modelSelectTarget === "create"
+    ? newKeyModels
+    : keys.find((key) => key.id === modelSelectTarget)?.allowedModels || [];
+
+  const updateAllowedModels = async (keyId, models) => {
+    const allowedModels = models.length > 0 ? models : null;
+    try {
+      const res = await fetch(`/api/keys/${keyId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowedModels }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setKeys((prev) => prev.map((key) => (
+          key.id === keyId
+            ? { ...key, allowedModels: data.key?.allowedModels ?? allowedModels }
+            : key
+        )));
+      }
+    } catch (error) {
+      console.log("Error updating allowed models:", error);
+    }
+  };
+
+  const handleSelectAllowedModel = (model) => {
+    if (model?.isPlaceholder) return;
+    const value = model?.value || model?.name || model;
+    const next = [...new Set([...selectedAllowedModels, value])];
+    if (modelSelectTarget === "create") setNewKeyModels(next);
+    else if (modelSelectTarget) updateAllowedModels(modelSelectTarget, next);
+  };
+
+  const handleDeselectAllowedModel = (model) => {
+    const value = model?.value || model?.name || model;
+    const next = selectedAllowedModels.filter((item) => item !== value);
+    if (modelSelectTarget === "create") setNewKeyModels(next);
+    else if (modelSelectTarget) updateAllowedModels(modelSelectTarget, next);
   };
 
   const maskKey = (fullKey) => {
@@ -1027,8 +1095,35 @@ export default function APIPageClient({ machineId }) {
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
+                  {key.allowedModels?.length > 0 ? (
+                    <div className="mt-2">
+                      <p className="mb-1 text-xs text-text-muted">Allowed models</p>
+                      <div className="flex flex-wrap gap-1">
+                        {key.allowedModels.map((model) => (
+                          <span
+                            key={model}
+                            className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary"
+                          >
+                            {model}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-xs text-text-muted">All models allowed</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setModelSelectTarget(key.id);
+                      setShowModelSelect(true);
+                    }}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    title="Edit allowed models"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">model_training</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1068,6 +1163,7 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewKeyModels([]);
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1077,6 +1173,42 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+          <div className="border-t border-border pt-3">
+            <p className="mb-2 text-sm font-medium">
+              Allowed models <span className="font-normal text-text-muted">(optional)</span>
+            </p>
+            {newKeyModels.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1">
+                {newKeyModels.map((model) => (
+                  <span
+                    key={model}
+                    className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary"
+                  >
+                    {model}
+                    <button
+                      onClick={() => setNewKeyModels((prev) => prev.filter((item) => item !== model))}
+                      className="hover:text-red-500"
+                      title={`Remove ${model}`}
+                    >
+                      <span className="material-symbols-outlined text-[12px]">close</span>
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="checklist"
+              onClick={() => {
+                setModelSelectTarget("create");
+                setShowModelSelect(true);
+              }}
+            >
+              {newKeyModels.length > 0 ? "Change models" : "Select models"}
+            </Button>
+            <p className="mt-1 text-xs text-text-muted">Leave empty to allow all models.</p>
+          </div>
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
@@ -1085,6 +1217,7 @@ export default function APIPageClient({ machineId }) {
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+                setNewKeyModels([]);
               }}
               variant="ghost"
               fullWidth
@@ -1275,6 +1408,21 @@ export default function APIPageClient({ machineId }) {
           </div>
         </div>
       </Modal>
+
+      <ModelSelectModal
+        isOpen={showModelSelect}
+        onClose={() => {
+          setShowModelSelect(false);
+          setModelSelectTarget(null);
+        }}
+        onSelect={handleSelectAllowedModel}
+        onDeselect={handleDeselectAllowedModel}
+        activeProviders={activeProviders}
+        modelAliases={modelAliases}
+        addedModelValues={selectedAllowedModels}
+        closeOnSelect={false}
+        title={modelSelectTarget === "create" ? "Allowed models for new key" : "Allowed models"}
+      />
 
       {/* Confirm Modal */}
       <ConfirmModal
