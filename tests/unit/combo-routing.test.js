@@ -1,6 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-import { getRotatedModels, handleComboChat, resetComboRotation } from "../../open-sse/services/combo.js";
+import {
+  getComboMembersFromData,
+  getComboModelsFromData,
+  getRotatedModels,
+  handleComboChat,
+  resetComboRotation,
+} from "../../open-sse/services/combo.js";
+import {
+  getComboModelsFromData as getCompactComboModelsFromData,
+  handleComboChat as handleCompactComboChat,
+} from "../../open-sse/services/compact.js";
 
 const log = { info: () => {}, warn: () => {}, debug: () => {} };
 
@@ -83,20 +93,59 @@ describe("combo round-robin routing", () => {
     ];
 
     await expect(firstChoices(models, 6)).resolves.toEqual([
-      "provider/a", "provider/a", "provider/b",
-      "provider/a", "provider/a", "provider/b",
+      "provider/a", "provider/b", "provider/a",
+      "provider/a", "provider/b", "provider/a",
     ]);
   });
 
-  it("applies sticky limits to weighted slots", async () => {
+  it("applies sticky limits as calls per model while retaining weights", async () => {
     const models = [
       { model: "provider/a", weight: 2 },
       { model: "provider/b", weight: 1 },
     ];
 
     await expect(firstChoices(models, 6, 2)).resolves.toEqual([
-      "provider/a", "provider/a", "provider/a", "provider/a", "provider/b", "provider/b",
+      "provider/a", "provider/a", "provider/b", "provider/b", "provider/a", "provider/a",
     ]);
+  });
+
+  it("keeps the legacy combo lookup API returning model names", () => {
+    const combos = [{ name: "mixed", models: [
+      " provider/legacy ",
+      { model: " provider/weighted ", weight: 4 },
+    ] }];
+
+    expect(getComboModelsFromData("mixed", combos)).toEqual([
+      "provider/legacy",
+      "provider/weighted",
+    ]);
+    expect(getComboMembersFromData("mixed", combos)).toEqual([
+      { model: "provider/legacy", weight: 1 },
+      { model: "provider/weighted", weight: 4 },
+    ]);
+  });
+
+  it("normalizes structured members in the compact compatibility service", async () => {
+    const combos = [{ name: "free-combo", models: [
+      " provider/base ",
+      { model: " provider/overlay ", weight: 0 },
+    ] }];
+    expect(getCompactComboModelsFromData("free-combo", combos)).toEqual([
+      "provider/base",
+      "provider/overlay",
+    ]);
+
+    const tried = [];
+    await handleCompactComboChat({
+      body: {},
+      models: combos[0].models,
+      handleSingleModel: async (_body, model) => {
+        tried.push(model);
+        throw new Error("next");
+      },
+      log,
+    });
+    expect(tried).toEqual(["provider/base", "provider/overlay"]);
   });
 
   it("keeps zero-weight models after the positive pool in fallback strategy", async () => {
@@ -151,5 +200,25 @@ describe("combo round-robin routing", () => {
     });
 
     expect(tried[0]).toBe("anthropic/claude-sonnet-4.6");
+  });
+
+  it("does not promote a zero-weight model during capability auto-switch", async () => {
+    const tried = [];
+    await handleComboChat({
+      body: { messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "x" } }] }] },
+      models: [
+        { model: "deepseek/deepseek-chat", weight: 1 },
+        { model: "anthropic/claude-sonnet-4.6", weight: 0 },
+      ],
+      handleSingleModel: async (_body, model) => { tried.push(model); throw new Error("next"); },
+      log,
+      comboName: "vision-fallback-only",
+      comboStrategy: "round-robin",
+    });
+
+    expect(tried).toEqual([
+      "deepseek/deepseek-chat",
+      "anthropic/claude-sonnet-4.6",
+    ]);
   });
 });

@@ -2,6 +2,8 @@
  * Shared combo (model combo) handling with fallback support
  */
 
+import { getComboModelNames } from "../../src/lib/comboUtils.js";
+
 /**
  * Get combo models from combos data
  * @param {string} modelStr - Model string to check
@@ -17,7 +19,7 @@ export function getComboModelsFromData(modelStr, combosData) {
   
   const combo = combos.find(c => c.name === modelStr);
   if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
+    return getComboModelNames(combo.models);
   }
   return null;
 }
@@ -26,17 +28,18 @@ export function getComboModelsFromData(modelStr, combosData) {
  * Handle combo chat with fallback
  * @param {Object} options
  * @param {Object} options.body - Request body
- * @param {string[]} options.models - Array of model strings to try
+ * @param {(string|{model: string, weight?: number})[]} options.models - Combo members to try
  * @param {Function} options.handleSingleModel - Function to handle single model: (body, modelStr) => Promise<Response>
  * @param {Object} options.log - Logger object
  * @returns {Promise<Response>}
  */
 export async function handleComboChat({ body, models, handleSingleModel, log }) {
+  const modelNames = getComboModelNames(models);
   let lastError = null;
 
-  for (let i = 0; i < models.length; i++) {
-    const modelStr = models[i];
-    log.info("COMBO", `Trying model ${i + 1}/${models.length}: ${modelStr}`);
+  for (let i = 0; i < modelNames.length; i++) {
+    const modelStr = modelNames[i];
+    log.info("COMBO", `Trying model ${i + 1}/${modelNames.length}: ${modelStr}`);
 
     let result;
     try {
@@ -68,4 +71,3 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
     }
   );
 }
-

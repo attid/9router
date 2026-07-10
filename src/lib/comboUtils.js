@@ -2,7 +2,8 @@
  * Return the model name from either a legacy string member or a structured one.
  */
 export function getComboModelName(entry) {
-  return typeof entry === "string" ? entry : entry?.model;
+  const model = typeof entry === "string" ? entry : entry?.model;
+  return typeof model === "string" ? model.trim() : model;
 }
 
 /**

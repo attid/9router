@@ -193,35 +193,36 @@ function pickWeightedModel(models, comboName, stickyLimit) {
   const rotationKey = comboName || "__default__";
   const normalizedStickyLimit = normalizeStickyLimit(stickyLimit);
   const existingState = comboRotationState.get(rotationKey);
-  const state = typeof existingState === "number"
-    ? { index: existingState, consecutiveUseCount: 0 }
-    : (existingState || { index: 0, consecutiveUseCount: 0 });
-  const currentIndex = state.index % totalWeight;
+  const signature = JSON.stringify(models.map(({ model, weight }) => [model, weight]));
+  const state = existingState?.weightedSignature === signature
+    ? existingState
+    : {
+        weightedSignature: signature,
+        currentWeights: models.map(() => 0),
+        selectedIndex: null,
+        consecutiveUseCount: 0,
+      };
 
-  let remaining = currentIndex;
-  let selected = models[0];
-  for (const member of models) {
-    if (remaining < member.weight) {
-      selected = member;
-      break;
-    }
-    remaining -= member.weight;
+  if (state.selectedIndex !== null && state.consecutiveUseCount < normalizedStickyLimit) {
+    state.consecutiveUseCount += 1;
+    comboRotationState.set(rotationKey, state);
+    return models[state.selectedIndex];
   }
 
-  const nextUseCount = state.consecutiveUseCount + 1;
-  if (nextUseCount >= normalizedStickyLimit) {
-    comboRotationState.set(rotationKey, {
-      index: (currentIndex + 1) % totalWeight,
-      consecutiveUseCount: 0,
-    });
-  } else {
-    comboRotationState.set(rotationKey, {
-      index: currentIndex,
-      consecutiveUseCount: nextUseCount,
-    });
+  const currentWeights = state.currentWeights.map((current, index) => current + models[index].weight);
+  let selectedIndex = 0;
+  for (let index = 1; index < currentWeights.length; index++) {
+    if (currentWeights[index] > currentWeights[selectedIndex]) selectedIndex = index;
   }
+  currentWeights[selectedIndex] -= totalWeight;
 
-  return selected;
+  comboRotationState.set(rotationKey, {
+    weightedSignature: signature,
+    currentWeights,
+    selectedIndex,
+    consecutiveUseCount: 1,
+  });
+  return models[selectedIndex];
 }
 
 function uniqueModelNames(members) {
@@ -230,17 +231,18 @@ function uniqueModelNames(members) {
 
 /**
  * Build an ordinary combo's try order. Positive weights form the rotating pool;
- * zero-weight members are fallback-only unless capacity auto-switch later needs
- * to promote them for request compatibility.
+ * zero-weight members always remain in the fallback-only suffix.
  */
-export function getComboTryOrder(models, comboName, strategy, stickyLimit = 1) {
+function getComboTryOrderParts(models, comboName, strategy, stickyLimit = 1) {
   const normalized = normalizeComboModels(models);
   const weighted = normalized.filter((member) => member.weight > 0);
   const fallbackOnly = normalized.filter((member) => member.weight === 0);
-  const fallbackNames = uniqueModelNames(fallbackOnly);
+  const primaryNames = uniqueModelNames(weighted);
+  const primarySet = new Set(primaryNames);
+  const fallbackNames = uniqueModelNames(fallbackOnly).filter((model) => !primarySet.has(model));
 
   if (strategy !== "round-robin" || weighted.length === 0) {
-    return [...uniqueModelNames(weighted), ...fallbackNames];
+    return { primary: primaryNames, fallback: fallbackNames };
   }
 
   const selected = pickWeightedModel(weighted, comboName, stickyLimit);
@@ -249,7 +251,12 @@ export function getComboTryOrder(models, comboName, strategy, stickyLimit = 1) {
     ...weighted.slice(selectedIndex),
     ...weighted.slice(0, selectedIndex),
   ];
-  return [...uniqueModelNames(rotatedPool), ...fallbackNames];
+  return { primary: uniqueModelNames(rotatedPool), fallback: fallbackNames };
+}
+
+export function getComboTryOrder(models, comboName, strategy, stickyLimit = 1) {
+  const { primary, fallback } = getComboTryOrderParts(models, comboName, strategy, stickyLimit);
+  return [...primary, ...fallback];
 }
 
 /**
@@ -262,12 +269,12 @@ export function resetComboRotation(comboName) {
 }
 
 /**
- * Get combo models from combos data
+ * Get structured combo members from combos data.
  * @param {string} modelStr - Model string to check
  * @param {Array|Object} combosData - Array of combos or object with combos
  * @returns {{model: string, weight: number}[]|null} Normalized members or null
  */
-export function getComboModelsFromData(modelStr, combosData) {
+export function getComboMembersFromData(modelStr, combosData) {
   // Don't check if it's in provider/model format
   if (modelStr.includes("/")) return null;
   
@@ -279,6 +286,15 @@ export function getComboModelsFromData(modelStr, combosData) {
     return normalizeComboModels(combo.models);
   }
   return null;
+}
+
+/**
+ * Legacy lookup API. Keep returning model names for existing upstream callers;
+ * weighted consumers should use getComboMembersFromData explicitly.
+ */
+export function getComboModelsFromData(modelStr, combosData) {
+  const members = getComboMembersFromData(modelStr, combosData);
+  return members ? getComboModelNames(members) : null;
 }
 
 /**
@@ -295,19 +311,21 @@ export function getComboModelsFromData(modelStr, combosData) {
  */
 export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
   // Build the weighted rotation + fallback order before upstream capacity ranking.
-  let rotatedModels = getComboTryOrder(models, comboName, comboStrategy, comboStickyLimit);
+  let { primary, fallback } = getComboTryOrderParts(models, comboName, comboStrategy, comboStickyLimit);
 
-  // Auto-switch: float models that satisfy the request's required capabilities to the front.
+  // Auto-switch can reorder weighted primaries, but weight-zero members remain
+  // fallback-only and retain their declared order.
   if (autoSwitch) {
     const required = detectRequiredCapabilities(body);
     if (required.size > 0) {
-      const reordered = reorderByCapabilities(rotatedModels, required);
-      if (reordered[0] !== rotatedModels[0]) {
+      const reordered = reorderByCapabilities(primary, required);
+      if (reordered[0] !== primary[0]) {
         log.info("COMBO", `auto-switch for [${[...required].join(",")}] → ${reordered[0]}`);
       }
-      rotatedModels = reordered;
+      primary = reordered;
     }
   }
+  const rotatedModels = [...primary, ...fallback];
   
   let lastError = null;
   let earliestRetryAfter = null;

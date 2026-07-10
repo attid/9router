@@ -20,6 +20,18 @@ describe("combo model normalization", () => {
     ]);
   });
 
+  it("trims model ids at the normalization boundary", () => {
+    expect(normalizeComboModels([
+      "  provider/legacy  ",
+      { model: " provider/weighted ", weight: 3 },
+    ])).toEqual([
+      { model: "provider/legacy", weight: 1 },
+      { model: "provider/weighted", weight: 3 },
+    ]);
+    expect(getComboModelNames([" provider/a ", { model: " provider/b " }]))
+      .toEqual(["provider/a", "provider/b"]);
+  });
+
   it("extracts names without exposing structured members to consumers", () => {
     const members = ["provider/legacy", { model: "provider/new", weight: 0 }];
     expect(getComboModelName(members[0])).toBe("provider/legacy");
@@ -38,6 +50,7 @@ describe("combo model normalization", () => {
   it("accepts strings and non-negative integer weights", () => {
     expect(validateComboModels(["provider/a", { model: "provider/b", weight: 0 }])).toBeNull();
     expect(validateComboModels([{ model: "provider/a", weight: 12 }])).toBeNull();
+    expect(validateComboModels([" provider/a "])).toBeNull();
   });
 
   it.each([
