@@ -35,6 +35,7 @@ import {
   getKeyUsageStats,
   getWeekStart,
 } from "@/sse/services/keyLimits.js";
+import { invalidateKeyLimitCounters } from "@/shared/utils/keyLimitCounters.js";
 
 beforeEach(() => {
   counters.clear();
@@ -54,6 +55,20 @@ describe("calendar periods", () => {
     expect(getWeekStart(new Date(2026, 6, 8, 14))).toEqual(new Date(2026, 6, 6, 0, 0, 0, 0));
     expect(getWeekStart(new Date(2026, 6, 12, 23))).toEqual(new Date(2026, 6, 6, 0, 0, 0, 0));
     expect(getWeekStart(new Date(2026, 6, 6, 1))).toEqual(new Date(2026, 6, 6, 0, 0, 0, 0));
+  });
+
+  it("preserves the active offset occurrence during a DST fall-back hour", () => {
+    const originalTz = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    try {
+      const firstOccurrence = new Date("2026-11-01T01:30:00-04:00");
+      const secondOccurrence = new Date("2026-11-01T01:30:00-05:00");
+
+      expect(getHourStart(firstOccurrence).toISOString()).toBe("2026-11-01T05:00:00.000Z");
+      expect(getHourStart(secondOccurrence).toISOString()).toBe("2026-11-01T06:00:00.000Z");
+    } finally {
+      process.env.TZ = originalTz;
+    }
   });
 });
 
@@ -107,6 +122,41 @@ describe("hybrid API-key counters", () => {
     expect(mocks.getUsageByApiKey).toHaveBeenCalledTimes(3);
     expect(counters.get("sk-rollover").daily.total).toBe(0);
   });
+
+  it("does not lose usage emitted while persisted counters are loading", async () => {
+    mocks.getApiKeyByValue.mockResolvedValue({ limits: { hourly: 1_000 } });
+    const resolvers = [];
+    mocks.getUsageByApiKey
+      .mockImplementationOnce(() => new Promise((resolve) => resolvers.push(resolve)))
+      .mockImplementationOnce(() => new Promise((resolve) => resolvers.push(resolve)))
+      .mockImplementationOnce(() => new Promise((resolve) => resolvers.push(resolve)))
+      .mockResolvedValue(15);
+
+    const pending = getKeyUsageStats("sk-loading-event");
+    await vi.waitFor(() => expect(resolvers).toHaveLength(3));
+    mocks.statsEmitter.emit("usage", {
+      apiKey: "sk-loading-event",
+      tokens: { prompt_tokens: 10, completion_tokens: 5 },
+    });
+    for (const resolve of resolvers) resolve(0);
+
+    await expect(pending).resolves.toMatchObject({ hourly: { used: 15 } });
+    expect(mocks.getUsageByApiKey).toHaveBeenCalledTimes(6);
+  });
+
+  it("does not repopulate a counter invalidated during an in-flight load", async () => {
+    mocks.getApiKeyByValue.mockResolvedValue({ limits: { hourly: 1_000 } });
+    const resolvers = [];
+    mocks.getUsageByApiKey.mockImplementation(() => new Promise((resolve) => resolvers.push(resolve)));
+
+    const pending = getKeyUsageStats("sk-invalidated-load");
+    await vi.waitFor(() => expect(resolvers).toHaveLength(3));
+    invalidateKeyLimitCounters("sk-invalidated-load");
+    for (const resolve of resolvers) resolve(20);
+
+    await expect(pending).resolves.toMatchObject({ hourly: { used: 20 } });
+    expect(counters.has("sk-invalidated-load")).toBe(false);
+  });
 });
 
 describe("limit enforcement", () => {
@@ -131,6 +181,24 @@ describe("limit enforcement", () => {
     expect(result.error).toContain(period);
     expect(result.retryAfter).toBeGreaterThan(0);
     expect(result.retryAfter).toBeLessThanOrEqual(maxRetry);
+  });
+
+  it("retries at the next real hour during the first DST fall-back occurrence", async () => {
+    const originalTz = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-01T01:30:00-04:00"));
+      mocks.getApiKeyByValue.mockResolvedValue({ limits: { hourly: 100 } });
+      mocks.getUsageByApiKey.mockResolvedValue(100);
+
+      const result = await checkKeyLimits("sk-fall-back");
+
+      expect(result.allowed).toBe(false);
+      expect(result.retryAfter).toBe(1_800);
+    } finally {
+      process.env.TZ = originalTz;
+    }
   });
 });
 

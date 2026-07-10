@@ -26,11 +26,21 @@ function withFreeComboUsage(clientRawRequest, combo) {
   if (combo?.isFree !== true || clientRawRequest?.usageMeta?.metered === false) return clientRawRequest;
   return {
     ...clientRawRequest,
-    usageMeta: {
+    usageMeta: Object.freeze({
       ...clientRawRequest?.usageMeta,
       requestedModel: combo.name,
       metered: false,
-    },
+    }),
+  };
+}
+
+function withUsageStartedAt(clientRawRequest, startedAt) {
+  return {
+    ...clientRawRequest,
+    usageMeta: Object.freeze({
+      ...clientRawRequest?.usageMeta,
+      startedAt,
+    }),
   };
 }
 
@@ -40,6 +50,7 @@ function withFreeComboUsage(clientRawRequest, combo) {
  * Format detection and translation handled by translator
  */
 export async function handleChat(request, clientRawRequest = null) {
+  const startedAt = clientRawRequest?.usageMeta?.startedAt || new Date().toISOString();
   let body;
   try {
     body = await request.json();
@@ -57,6 +68,7 @@ export async function handleChat(request, clientRawRequest = null) {
       headers: Object.fromEntries(request.headers.entries())
     };
   }
+  clientRawRequest = withUsageStartedAt(clientRawRequest, startedAt);
   cacheClaudeHeaders(clientRawRequest.headers);
 
   // Log request endpoint and model

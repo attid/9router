@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { invalidateKeyLimitCounters } from "@/shared/utils/keyLimitCounters.js";
 
 function rowToKey(row) {
   if (!row) return null;
@@ -81,6 +82,10 @@ export async function updateApiKey(id, data) {
       `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, limits = ?, isActive = ? WHERE id = ?`,
       [merged.key, merged.name, merged.machineId, stringifyJson(merged.limits), merged.isActive ? 1 : 0, id]
     );
+    if (Object.hasOwn(data, "limits") || merged.key !== current.key) {
+      invalidateKeyLimitCounters(current.key);
+      if (merged.key !== current.key) invalidateKeyLimitCounters(merged.key);
+    }
     result = merged;
   });
   return result;
@@ -88,7 +93,9 @@ export async function updateApiKey(id, data) {
 
 export async function deleteApiKey(id) {
   const db = await getAdapter();
+  const row = db.get(`SELECT key FROM apiKeys WHERE id = ?`, [id]);
   const res = db.run(`DELETE FROM apiKeys WHERE id = ?`, [id]);
+  if ((res?.changes ?? 0) > 0 && row?.key) invalidateKeyLimitCounters(row.key);
   return (res?.changes ?? 0) > 0;
 }
 

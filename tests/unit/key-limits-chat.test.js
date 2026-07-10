@@ -75,6 +75,18 @@ beforeEach(() => {
 });
 
 describe("chat token-limit enforcement", () => {
+  it("propagates one immutable admission timestamp to the usage pipeline", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-01T05:30:00.000Z"));
+
+    await handleChat(requestFor("openai/gpt-test"));
+
+    const usageMeta = mocks.handleChatCore.mock.calls[0][0].clientRawRequest.usageMeta;
+    expect(usageMeta.startedAt).toBe("2026-11-01T05:30:00.000Z");
+    expect(Object.isFrozen(usageMeta)).toBe(true);
+    vi.useRealTimers();
+  });
+
   it("returns a structured 429 and Retry-After before model routing", async () => {
     mocks.checkKeyLimits.mockResolvedValue({ allowed: false, error: "hourly exhausted", retryAfter: 42 });
 
@@ -96,7 +108,9 @@ describe("chat token-limit enforcement", () => {
 
     expect(mocks.checkKeyLimits).toHaveBeenCalledWith("sk-chat-test");
     expect(mocks.handleChatCore).toHaveBeenCalledOnce();
-    expect(mocks.handleChatCore.mock.calls[0][0].clientRawRequest.usageMeta).toBeUndefined();
+    expect(mocks.handleChatCore.mock.calls[0][0].clientRawRequest.usageMeta).toMatchObject({
+      startedAt: expect.any(String),
+    });
   });
 });
 
@@ -108,9 +122,10 @@ describe("free-combo usage metadata", () => {
     await handleChat(requestFor("free_combo"));
 
     expect(mocks.checkKeyLimits).not.toHaveBeenCalled();
-    expect(mocks.handleChatCore.mock.calls[0][0].clientRawRequest.usageMeta).toEqual({
+    expect(mocks.handleChatCore.mock.calls[0][0].clientRawRequest.usageMeta).toMatchObject({
       requestedModel: "free_combo",
       metered: false,
+      startedAt: expect.any(String),
     });
   });
 
@@ -131,7 +146,12 @@ describe("free-combo usage metadata", () => {
 
     expect(mocks.handleChatCore).toHaveBeenCalledTimes(2);
     for (const [options] of mocks.handleChatCore.mock.calls) {
-      expect(options.clientRawRequest.usageMeta).toEqual({ requestedModel: "free_fusion", metered: false });
+      expect(options.clientRawRequest.usageMeta).toMatchObject({
+        requestedModel: "free_fusion",
+        metered: false,
+        startedAt: expect.any(String),
+      });
+      expect(Object.isFrozen(options.clientRawRequest.usageMeta)).toBe(true);
     }
   });
 
@@ -148,9 +168,10 @@ describe("free-combo usage metadata", () => {
 
     await handleChat(requestFor("outer_free"));
 
-    expect(mocks.handleChatCore.mock.calls[0][0].clientRawRequest.usageMeta).toEqual({
+    expect(mocks.handleChatCore.mock.calls[0][0].clientRawRequest.usageMeta).toMatchObject({
       requestedModel: "outer_free",
       metered: false,
+      startedAt: expect.any(String),
     });
   });
 });

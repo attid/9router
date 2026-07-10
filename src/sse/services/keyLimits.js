@@ -1,8 +1,10 @@
 import { getApiKeyByValue } from "@/lib/localDb.js";
 import { getUsageByApiKey, statsEmitter } from "@/lib/usageDb.js";
+import { getKeyLimitCounterGeneration, getKeyLimitCounters } from "@/shared/utils/keyLimitCounters.js";
 
 export function getHourStart(date = new Date()) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), date.getHours(), 0, 0, 0);
+  const elapsedMs = ((date.getMinutes() * 60 + date.getSeconds()) * 1000) + date.getMilliseconds();
+  return new Date(date.getTime() - elapsedMs);
 }
 
 export function getDayStart(date = new Date()) {
@@ -30,20 +32,32 @@ function usageTokens(entry) {
     + (tokens.completion_tokens ?? tokens.output_tokens ?? 0);
 }
 
-if (!global._apiKeyLimitCounters) global._apiKeyLimitCounters = new Map();
-export const counters = global._apiKeyLimitCounters;
+export const counters = getKeyLimitCounters();
+
+if (!global._apiKeyLimitUsageVersions) global._apiKeyLimitUsageVersions = new Map();
+const usageVersions = global._apiKeyLimitUsageVersions;
 
 async function loadCounters(apiKey, starts, target = null) {
-  const [hourly, daily, weekly] = await Promise.all([
-    getUsageByApiKey(apiKey, new Date(starts.hourly), { meteredOnly: true }),
-    getUsageByApiKey(apiKey, new Date(starts.daily), { meteredOnly: true }),
-    getUsageByApiKey(apiKey, new Date(starts.weekly), { meteredOnly: true }),
-  ]);
+  const generation = getKeyLimitCounterGeneration(apiKey);
+  let hourly;
+  let daily;
+  let weekly;
+  while (true) {
+    const version = usageVersions.get(apiKey) || 0;
+    [hourly, daily, weekly] = await Promise.all([
+      getUsageByApiKey(apiKey, new Date(starts.hourly), { meteredOnly: true }),
+      getUsageByApiKey(apiKey, new Date(starts.daily), { meteredOnly: true }),
+      getUsageByApiKey(apiKey, new Date(starts.weekly), { meteredOnly: true }),
+    ]);
+    if (version === (usageVersions.get(apiKey) || 0)) break;
+  }
   const entry = target || {};
   entry.hourly = { periodStart: starts.hourly, total: hourly };
   entry.daily = { periodStart: starts.daily, total: daily };
   entry.weekly = { periodStart: starts.weekly, total: weekly };
-  counters.set(apiKey, entry);
+  if (generation === getKeyLimitCounterGeneration(apiKey)) {
+    getKeyLimitCounters().set(apiKey, entry);
+  }
   return entry;
 }
 
@@ -61,6 +75,7 @@ async function ensureCounters(apiKey) {
 if (!global._apiKeyLimitUsageListener) {
   global._apiKeyLimitUsageListener = (usageEntry) => {
     if (!usageEntry?.apiKey || usageEntry.metered === false) return;
+    usageVersions.set(usageEntry.apiKey, (usageVersions.get(usageEntry.apiKey) || 0) + 1);
     const entry = global._apiKeyLimitCounters.get(usageEntry.apiKey);
     if (!entry) return;
 
@@ -75,8 +90,8 @@ if (!global._apiKeyLimitUsageListener) {
 }
 
 function nextPeriodStart(period, periodStart) {
+  if (period === "hourly") return new Date(periodStart + 60 * 60 * 1000);
   const next = new Date(periodStart);
-  if (period === "hourly") next.setHours(next.getHours() + 1);
   if (period === "daily") next.setDate(next.getDate() + 1);
   if (period === "weekly") next.setDate(next.getDate() + 7);
   return next;

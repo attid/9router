@@ -36,26 +36,65 @@ describe("API-key limits persistence", () => {
       limits: { hourly: 1_000, daily: 10_000, weekly: 50_000 },
     });
 
+    global._apiKeyLimitCounters = new Map([[key.key, { hourly: { periodStart: 1, total: 1 } }]]);
     await db.updateApiKey(key.id, { limits: { daily: 20_000 } });
+    expect(global._apiKeyLimitCounters.has(key.key)).toBe(false);
     await expect(db.getApiKeyById(key.id)).resolves.toMatchObject({
       limits: { hourly: 1_000, daily: 20_000, weekly: 50_000 },
     });
 
+    global._apiKeyLimitCounters.set(key.key, { daily: { periodStart: 2, total: 2 } });
     await db.updateApiKey(key.id, { limits: null });
+    expect(global._apiKeyLimitCounters.has(key.key)).toBe(false);
     await expect(db.getApiKeyById(key.id)).resolves.toMatchObject({ limits: null });
   });
 
-  it("preserves limits and free-combo flags through export/import", async () => {
+  it("preserves limits, free-combo flags, and complete usage through export/import", async () => {
     const key = await db.createApiKey("roundtrip", "machine-test", { hourly: 321 });
     const combo = await db.createCombo({ name: "free_roundtrip", models: ["openai/gpt-test"], isFree: true });
+    const timestamp = "2026-07-10T12:00:00.000Z";
+    await db.saveRequestUsage({
+      timestamp,
+      startedAt: timestamp,
+      provider: "openai",
+      model: "free-roundtrip-model",
+      apiKey: key.key,
+      requestedModel: combo.name,
+      metered: false,
+      tokens: { prompt_tokens: 123, completion_tokens: 45, cached_tokens: 67 },
+    });
     const snapshot = await db.exportDb();
 
     expect(snapshot.apiKeys.find((item) => item.id === key.id)?.limits).toEqual({ hourly: 321, daily: null, weekly: null });
     expect(snapshot.combos.find((item) => item.id === combo.id)?.isFree).toBe(true);
+    expect(snapshot.usageHistory.find((item) => item.timestamp === timestamp)).toMatchObject({
+      apiKey: key.key,
+      tokens: { prompt_tokens: 123, completion_tokens: 45, cached_tokens: 67 },
+      meta: { requestedModel: combo.name, metered: false, startedAt: timestamp },
+    });
 
+    const adapter = await (await import("@/lib/db/driver.js")).getAdapter();
+    adapter.run("DELETE FROM usageHistory WHERE timestamp = ?", [timestamp]);
     await db.importDb(snapshot);
     await expect(db.getApiKeyById(key.id)).resolves.toMatchObject({ limits: { hourly: 321, daily: null, weekly: null } });
     await expect(db.getComboById(combo.id)).resolves.toMatchObject({ isFree: true });
+    await expect(db.getUsageByApiKey(key.key, new Date(0))).resolves.toBe(168);
+    await expect(db.getUsageByApiKey(key.key, new Date(0), { meteredOnly: true })).resolves.toBe(0);
+    const restored = adapter.get("SELECT tokens, meta FROM usageHistory WHERE timestamp = ?", [timestamp]);
+    expect(JSON.parse(restored.tokens)).toMatchObject({ cached_tokens: 67 });
+    expect(JSON.parse(restored.meta)).toEqual({ requestedModel: combo.name, metered: false, startedAt: timestamp });
+  });
+
+  it("rejects legacy imports that restore positive limits without usage history", async () => {
+    await expect(db.importDb({
+      settings: {},
+      apiKeys: [{
+        id: "legacy-limited",
+        key: "sk-legacy-limited",
+        machineId: "machine-test",
+        limits: { hourly: 100 },
+      }],
+    })).rejects.toThrow(/usage history/i);
   });
 });
 

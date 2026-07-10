@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -29,7 +30,11 @@ describe("usage write metadata", () => {
       connectionId: "connection-1",
       apiKey: "sk-free-test",
       endpoint: "/v1/messages",
-      usageMeta: { requestedModel: "free_combo", metered: false },
+      usageMeta: {
+        requestedModel: "free_combo",
+        metered: false,
+        startedAt: "2026-11-01T05:30:00.000Z",
+      },
     });
 
     expect(mocks.saveRequestUsage).toHaveBeenCalledOnce();
@@ -39,6 +44,8 @@ describe("usage write metadata", () => {
       apiKey: "sk-free-test",
       requestedModel: "free_combo",
       metered: false,
+      startedAt: "2026-11-01T05:30:00.000Z",
+      timestamp: "2026-11-01T05:30:00.000Z",
       tokens: {
         prompt_tokens: 400,
         completion_tokens: 40,
@@ -63,7 +70,8 @@ describe("usage write metadata", () => {
 });
 
 describe("all current chat-core usage paths", () => {
-  const read = (relativePath) => fs.readFileSync(path.resolve(relativePath), "utf8");
+  const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
+  const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 
   it("propagates usageMeta in the non-streaming write", () => {
     const source = read("open-sse/handlers/chatCore/nonStreamingHandler.js");

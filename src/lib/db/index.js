@@ -1,6 +1,7 @@
 // Public API barrel — all DB functions
 import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
+import { invalidateKeyLimitCounters } from "@/shared/utils/keyLimitCounters.js";
 
 // Settings
 export {
@@ -73,6 +74,7 @@ export async function exportDb() {
   const { exportSettings } = await import("./repos/settingsRepo.js");
 
   const out = {
+    formatVersion: 2,
     settings: await exportSettings(),
     providerConnections: db.all(`SELECT * FROM providerConnections`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, provider: r.provider, authType: r.authType, name: r.name, email: r.email, priority: r.priority, isActive: r.isActive === 1, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     providerNodes: db.all(`SELECT * FROM providerNodes`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, type: r.type, name: r.name, createdAt: r.createdAt, updatedAt: r.updatedAt })),
@@ -83,6 +85,25 @@ export async function exportDb() {
     customModels: [],
     mitmAlias: {},
     pricing: {},
+    usageHistory: db.all(`SELECT * FROM usageHistory ORDER BY id ASC`).map((r) => ({
+      id: r.id,
+      timestamp: r.timestamp,
+      provider: r.provider,
+      model: r.model,
+      connectionId: r.connectionId,
+      apiKey: r.apiKey,
+      endpoint: r.endpoint,
+      promptTokens: r.promptTokens,
+      completionTokens: r.completionTokens,
+      cost: r.cost,
+      status: r.status,
+      tokens: parseJson(r.tokens, {}) || {},
+      meta: parseJson(r.meta, {}) || {},
+    })),
+    usageDaily: db.all(`SELECT dateKey, data FROM usageDaily ORDER BY dateKey ASC`).map((r) => ({
+      dateKey: r.dateKey,
+      data: parseJson(r.data, {}) || {},
+    })),
   };
 
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`)) out.modelAliases[r.key] = parseJson(r.value);
@@ -97,6 +118,20 @@ export async function importDb(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error("Invalid database payload");
   }
+  const hasUsageHistory = Object.hasOwn(payload, "usageHistory");
+  const hasUsageDaily = Object.hasOwn(payload, "usageDaily");
+  if (hasUsageHistory && !Array.isArray(payload.usageHistory)) {
+    throw new Error("Invalid usage history in database payload");
+  }
+  if (hasUsageDaily && !Array.isArray(payload.usageDaily)) {
+    throw new Error("Invalid daily usage in database payload");
+  }
+  const restoresPositiveLimits = (payload.apiKeys || []).some((key) =>
+    Object.values(key?.limits || {}).some((limit) => Number.isFinite(Number(limit)) && Number(limit) > 0),
+  );
+  if (restoresPositiveLimits && !hasUsageHistory) {
+    throw new Error("Cannot restore API key limits without usage history; export the full database first");
+  }
   const db = await getAdapter();
 
   db.transaction(() => {
@@ -108,6 +143,10 @@ export async function importDb(payload) {
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM combos`);
     db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);
+    if (hasUsageHistory) {
+      db.run(`DELETE FROM usageHistory`);
+      db.run(`DELETE FROM usageDaily`);
+    }
 
     // Settings
     if (payload.settings) {
@@ -160,7 +199,40 @@ export async function importDb(payload) {
     for (const [provider, models] of Object.entries(payload.pricing || {})) {
       db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('pricing', ?, ?)`, [provider, stringifyJson(models || {})]);
     }
+    if (hasUsageHistory) {
+      for (const row of payload.usageHistory) {
+        if (!row || typeof row !== "object" || !row.timestamp) {
+          throw new Error("Invalid usage history row in database payload");
+        }
+        const tokens = row.tokens && typeof row.tokens === "object" ? row.tokens : {};
+        const meta = row.meta && typeof row.meta === "object" ? row.meta : {};
+        const promptTokens = row.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0;
+        const completionTokens = row.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0;
+        db.run(
+          `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            new Date(row.timestamp).toISOString(), row.provider || null, row.model || null,
+            row.connectionId || null, row.apiKey || null, row.endpoint || null,
+            promptTokens, completionTokens, row.cost || 0, row.status || "ok",
+            stringifyJson(tokens), stringifyJson(meta),
+          ],
+        );
+      }
+      if (hasUsageDaily) {
+        for (const row of payload.usageDaily) {
+          if (!row || typeof row !== "object" || typeof row.dateKey !== "string" || !row.data || typeof row.data !== "object" || Array.isArray(row.data)) {
+            throw new Error("Invalid daily usage row in database payload");
+          }
+          db.run(`INSERT INTO usageDaily(dateKey, data) VALUES(?, ?)`, [row.dateKey, stringifyJson(row.data)]);
+        }
+      }
+    }
   });
+
+  invalidateKeyLimitCounters();
+  const { rebuildUsageDaily, resetUsageCaches } = await import("./repos/usageRepo.js");
+  resetUsageCaches();
+  if (hasUsageHistory && !hasUsageDaily) await rebuildUsageDaily();
 
   return await exportDb();
 }
