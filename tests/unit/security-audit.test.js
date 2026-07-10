@@ -58,6 +58,19 @@ describe("AUDIT-002: API key masking", () => {
     // Should NOT use raw r.apiKey in the key
     expect(source).not.toContain("${r.apiKey}|${r.model}|${r.provider");
   });
+
+  it("daily summaries and their timestamp overlay should be indexed by the masked key", () => {
+    const source = fs.readFileSync(
+      path.resolve("src/lib/db/repos/usageRepo.js"),
+      "utf-8"
+    );
+
+    expect(source).toContain("const statsApiKey = `${apiKeyKey}|${rawModel}|${provider || \"unknown\"}`");
+    expect(source).toContain("stats.byApiKey[statsApiKey]");
+    expect(source).toContain("`${maskApiKey(e.apiKey)}|${e.model}|${e.provider || \"unknown\"}`");
+    expect(source).toContain("`local-no-key|${r.model}|${r.provider || \"unknown\"}`");
+    expect(source).not.toContain("? `${e.apiKey}|${e.model}|${e.provider || \"unknown\"}`");
+  });
 });
 
 // ============================================================
