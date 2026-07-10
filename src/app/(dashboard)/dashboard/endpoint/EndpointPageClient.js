@@ -17,6 +17,7 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
+import { filterApiKeys, maskApiKey, sortApiKeysByName } from "./endpointKeyUtils";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -76,6 +77,9 @@ export default function APIPageClient({ machineId }) {
 
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
+  const [keySearch, setKeySearch] = useState("");
+  const [editingKeyName, setEditingKeyName] = useState(null);
+  const [editKeyNameValue, setEditKeyNameValue] = useState("");
 
   // Client-side local/remote detection (UI hint only, not a security gate)
   const [isRemoteHost, setIsRemoteHost] = useState(false);
@@ -85,6 +89,7 @@ export default function APIPageClient({ machineId }) {
   }, []);
 
   const { copied, copy } = useCopyToClipboard();
+  const visibleApiKeys = filterApiKeys(sortApiKeysByName(keys), keySearch);
 
   // Security gate: block remote exposure while dashboard uses default password or login is off.
   const isLoginUnsafe = !requireLogin || !hasPassword;
@@ -667,9 +672,28 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
-  const maskKey = (fullKey) => {
-    if (!fullKey || fullKey.length <= 10) return fullKey || "";
-    return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
+  const cancelKeyRename = () => {
+    setEditingKeyName(null);
+    setEditKeyNameValue("");
+  };
+
+  const handleSaveKeyName = async (id) => {
+    const name = editKeyNameValue.trim();
+    if (!name) return;
+
+    try {
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (res.ok) {
+        setKeys(prev => prev.map(key => key.id === id ? { ...key, name } : key));
+        cancelKeyRename();
+      }
+    } catch (error) {
+      console.log("Error renaming key:", error);
+    }
   };
 
   const toggleKeyVisibility = (keyId) => {
@@ -992,16 +1016,76 @@ export default function APIPageClient({ machineId }) {
           </div>
         ) : (
           <div className="flex flex-col">
-            {keys.map((key) => (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 pb-4">
+              <Input
+                size="sm"
+                value={keySearch}
+                onChange={(event) => setKeySearch(event.target.value)}
+                placeholder="Filter by name or key..."
+              />
+              <p className="text-xs text-text-muted shrink-0">
+                {visibleApiKeys.length} / {keys.length} keys
+              </p>
+            </div>
+            {visibleApiKeys.length === 0 ? (
+              <div className="text-center py-10 border-t border-border">
+                <p className="text-sm font-medium text-text-main">No keys match this filter</p>
+                <button
+                  onClick={() => setKeySearch("")}
+                  className="mt-2 text-sm text-primary hover:underline"
+                >
+                  Clear filter
+                </button>
+              </div>
+            ) : visibleApiKeys.map((key) => (
               <div
                 key={key.id}
                 className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{key.name}</p>
+                  {editingKeyName === key.id ? (
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-1">
+                      <Input
+                        size="sm"
+                        value={editKeyNameValue}
+                        onChange={(event) => setEditKeyNameValue(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") handleSaveKeyName(key.id);
+                          if (event.key === "Escape") cancelKeyRename();
+                        }}
+                        autoFocus
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          disabled={!editKeyNameValue.trim()}
+                          onClick={() => handleSaveKeyName(key.id)}
+                        >
+                          Save
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={cancelKeyRename}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">{key.name}</p>
+                      <button
+                        onClick={() => {
+                          setEditingKeyName(key.id);
+                          setEditKeyNameValue(key.name || "");
+                        }}
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                        title="Rename key"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">edit</span>
+                      </button>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 mt-1">
                     <code className="text-xs text-text-muted font-mono">
-                      {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
+                      {visibleKeys.has(key.id) ? key.key : maskApiKey(key.key)}
                     </code>
                     <button
                       onClick={() => toggleKeyVisibility(key.id)}
