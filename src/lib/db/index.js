@@ -64,7 +64,8 @@ export {
 
 // Request details
 export {
-  saveRequestDetail, getRequestDetails, getRequestDetailById,
+  saveRequestDetail, flushRequestDetails, getRequestDetails, getRequestDetailById,
+  iterateRequestDetailJsonRows,
 } from "./repos/requestDetailsRepo.js";
 
 // Export/import full DB
