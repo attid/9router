@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   nextResponse: Symbol("next"),
@@ -34,6 +34,10 @@ vi.mock("@/lib/auth/dashboardSession", () => ({
 }));
 
 const { proxy, __test__ } = await import("../../src/dashboardGuard.js");
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 function request(pathname, headers = {}) {
   const normalizedHeaders = new Headers(headers);
@@ -275,5 +279,26 @@ describe("dashboard guard helpers", () => {
     });
 
     expect(__test__.extractApiKey(apiRequest)).toBe("header-key");
+  });
+});
+
+describe("dashboard guard base-path redirects", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/9router");
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+  });
+
+  it("redirects unauthenticated dashboard requests to the prefixed login page", async () => {
+    const response = await proxy(request("/dashboard", { host: "router.example.com" }));
+
+    expect(response.url.pathname).toBe("/9router/login");
+  });
+
+  it("redirects the application root to the prefixed dashboard", async () => {
+    const response = await proxy(request("/", { host: "router.example.com" }));
+
+    expect(response.url.pathname).toBe("/9router/dashboard");
   });
 });
