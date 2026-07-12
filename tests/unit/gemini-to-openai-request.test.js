@@ -98,14 +98,12 @@ describe("geminiToOpenAIRequest", () => {
           parts: [
             {
               functionResponse: {
-                id: "call_success",
                 name: "read_file",
                 response: { output: "file contents" },
               },
             },
             {
               functionResponse: {
-                id: "call_error",
                 name: "read_file",
                 response: { error: { type: "file_not_found" } },
               },

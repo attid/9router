@@ -41,8 +41,9 @@ export function geminiToOpenAIRequest(model, body, stream) {
 
   // Convert contents to messages
   if (body.contents && Array.isArray(body.contents)) {
+    const toolCallState = { byName: new Map(), sequence: 0 };
     for (const content of body.contents) {
-      const converted = convertGeminiContent(content);
+      const converted = convertGeminiContent(content, toolCallState);
       if (Array.isArray(converted)) {
         result.messages.push(...converted);
       } else if (converted) {
@@ -74,7 +75,7 @@ export function geminiToOpenAIRequest(model, body, stream) {
 }
 
 // Convert Gemini content to OpenAI message
-function convertGeminiContent(content) {
+function convertGeminiContent(content, toolCallState) {
   const role = content.role === GEMINI_ROLE.USER ? ROLE.USER : ROLE.ASSISTANT;
   
   if (!content.parts || !Array.isArray(content.parts)) {
@@ -100,10 +101,12 @@ function convertGeminiContent(content) {
     }
 
     if (part.functionCall) {
-      // Gemini lacks a native call id; derive a deterministic one from the name so the
-      // matching functionResponse maps to the same tool_call_id (providers require pairing).
+      const callId = part.functionCall.id || `call_${part.functionCall.name}_${toolCallState.sequence++}`;
+      const pendingIds = toolCallState.byName.get(part.functionCall.name) || [];
+      pendingIds.push(callId);
+      toolCallState.byName.set(part.functionCall.name, pendingIds);
       toolCalls.push({
-        id: part.functionCall.id || `call_${part.functionCall.name}`,
+        id: callId,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
           name: part.functionCall.name,
@@ -115,9 +118,17 @@ function convertGeminiContent(content) {
     if (part.functionResponse) {
       const response = part.functionResponse.response;
       const responseContent = response?.output ?? response?.result ?? response ?? {};
+      const pendingIds = toolCallState.byName.get(part.functionResponse.name) || [];
+      let callId = part.functionResponse.id;
+      if (callId) {
+        const matchingIndex = pendingIds.indexOf(callId);
+        if (matchingIndex !== -1) pendingIds.splice(matchingIndex, 1);
+      } else {
+        callId = pendingIds.shift() || `call_${part.functionResponse.name}`;
+      }
       toolResponses.push({
         role: ROLE.TOOL,
-        tool_call_id: part.functionResponse.id || `call_${part.functionResponse.name}`,
+        tool_call_id: callId,
         content: typeof responseContent === "string" ? responseContent : JSON.stringify(responseContent)
       });
     }
