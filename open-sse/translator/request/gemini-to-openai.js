@@ -43,7 +43,9 @@ export function geminiToOpenAIRequest(model, body, stream) {
   if (body.contents && Array.isArray(body.contents)) {
     for (const content of body.contents) {
       const converted = convertGeminiContent(content);
-      if (converted) {
+      if (Array.isArray(converted)) {
+        result.messages.push(...converted);
+      } else if (converted) {
         result.messages.push(converted);
       }
     }
@@ -81,6 +83,7 @@ function convertGeminiContent(content) {
 
   const parts = [];
   const toolCalls = [];
+  const toolResponses = [];
 
   for (const part of content.parts) {
     if (part.text !== undefined) {
@@ -111,14 +114,16 @@ function convertGeminiContent(content) {
 
     if (part.functionResponse) {
       const response = part.functionResponse.response;
-      const content = response?.output ?? response?.result ?? response ?? {};
-      return {
+      const responseContent = response?.output ?? response?.result ?? response ?? {};
+      toolResponses.push({
         role: ROLE.TOOL,
         tool_call_id: part.functionResponse.id || `call_${part.functionResponse.name}`,
-        content: typeof content === "string" ? content : JSON.stringify(content)
-      };
+        content: typeof responseContent === "string" ? responseContent : JSON.stringify(responseContent)
+      });
     }
   }
+
+  const messages = [];
 
   if (toolCalls.length > 0) {
     const result = { role: ROLE.ASSISTANT };
@@ -126,17 +131,20 @@ function convertGeminiContent(content) {
       result.content = parts.length === 1 ? parts[0].text : parts;
     }
     result.tool_calls = toolCalls;
-    return result;
+    messages.push(result);
   }
 
-  if (parts.length > 0) {
-    return {
+  messages.push(...toolResponses);
+
+  if (parts.length > 0 && toolCalls.length === 0) {
+    messages.push({
       role,
       content: collapseTextParts(parts)
-    };
+    });
   }
 
-  return null;
+  if (messages.length === 0) return null;
+  return messages.length === 1 ? messages[0] : messages;
 }
 
 // Extract text from Gemini content

@@ -70,4 +70,83 @@ describe("geminiToOpenAIRequest", () => {
       content: "file contents here",
     });
   });
+
+  it("preserves parallel function responses from one Gemini user turn", () => {
+    const result = geminiToOpenAIRequest("gpt-4o", {
+      contents: [
+        {
+          role: "model",
+          parts: [
+            {
+              functionCall: {
+                id: "call_success",
+                name: "read_file",
+                args: { file_path: "GEMINI.md" },
+              },
+            },
+            {
+              functionCall: {
+                id: "call_error",
+                name: "read_file",
+                args: { file_path: "missing.txt" },
+              },
+            },
+          ],
+        },
+        {
+          role: "user",
+          parts: [
+            {
+              functionResponse: {
+                id: "call_success",
+                name: "read_file",
+                response: { output: "file contents" },
+              },
+            },
+            {
+              functionResponse: {
+                id: "call_error",
+                name: "read_file",
+                response: { error: { type: "file_not_found" } },
+              },
+            },
+          ],
+        },
+      ],
+    }, true);
+
+    expect(result.messages).toEqual([
+      {
+        role: "assistant",
+        tool_calls: [
+          {
+            id: "call_success",
+            type: "function",
+            function: {
+              name: "read_file",
+              arguments: '{"file_path":"GEMINI.md"}',
+            },
+          },
+          {
+            id: "call_error",
+            type: "function",
+            function: {
+              name: "read_file",
+              arguments: '{"file_path":"missing.txt"}',
+            },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        tool_call_id: "call_success",
+        content: "file contents",
+      },
+      {
+        role: "tool",
+        tool_call_id: "call_error",
+        content: '{"error":{"type":"file_not_found"}}',
+      },
+    ]);
+  });
 });
