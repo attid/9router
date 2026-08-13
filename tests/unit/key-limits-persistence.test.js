@@ -206,6 +206,22 @@ describe("free-combo metering persistence", () => {
     expect(global._comboLimitCounters.has("sk-two")).toBe(false);
   });
 
+  it("invalidates all combo counters after a database restore", async () => {
+    const combo = await db.createCombo({
+      name: "combo_restore_invalidation",
+      models: ["provider/one"],
+      limits: { hourly: 100 },
+    });
+    const snapshot = await db.exportDb();
+    global._comboLimitCounters = new Map([
+      ["sk-restored", new Map([[combo.id, { hourly: { total: 100 } }]])],
+    ]);
+
+    await db.importDb(snapshot);
+
+    expect(global._comboLimitCounters.size).toBe(0);
+  });
+
   it("keeps free usage in reports while metered totals exclude it", async () => {
     const apiKey = "sk-metered-report-test";
     await db.saveRequestUsage({

@@ -2,6 +2,7 @@
 import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
 import { invalidateKeyLimitCounters } from "@/shared/utils/keyLimitCounters.js";
+import { invalidateComboLimitCounters } from "@/shared/utils/comboLimitCounters.js";
 
 // Settings
 export {
@@ -230,6 +231,7 @@ export async function importDb(payload) {
   });
 
   invalidateKeyLimitCounters();
+  invalidateComboLimitCounters();
   const { rebuildUsageDaily, resetUsageCaches } = await import("./repos/usageRepo.js");
   resetUsageCaches();
   if (hasUsageHistory && !hasUsageDaily) await rebuildUsageDaily();
