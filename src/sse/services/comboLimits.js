@@ -117,7 +117,8 @@ export async function checkComboLimits(apiKey, combo) {
   for (const period of PERIODS) {
     const limit = limits[period];
     if (!positiveLimit(limit) || usage[period].total < limit) continue;
-    const retryAfter = Math.max(1, Math.ceil((nextPeriodStart(period, usage[period].periodStart) - new Date()) / 1000));
+    const resetAt = nextPeriodStart(period, usage[period].periodStart);
+    const retryAfter = Math.max(1, Math.ceil((resetAt - new Date()) / 1000));
     return {
       allowed: false,
       error: `Combo token limit exceeded: ${combo.name} ${period} limit of ${limit} tokens reached (used: ${usage[period].total})`,
@@ -129,6 +130,7 @@ export async function checkComboLimits(apiKey, combo) {
       period,
       used: usage[period].total,
       limit,
+      resetAt: resetAt.toISOString(),
     };
   }
   return { allowed: true };

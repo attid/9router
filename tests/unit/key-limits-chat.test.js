@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getModelInfo: vi.fn(),
   getProviderCredentials: vi.fn(),
   checkKeyLimits: vi.fn(),
+  checkComboLimits: vi.fn(),
   handleChatCore: vi.fn(),
   handleComboChat: vi.fn(),
   handleFusionChat: vi.fn(),
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("open-sse/index.js", () => ({}));
 vi.mock("@/lib/localDb", () => ({ getSettings: mocks.getSettings, getComboByName: mocks.getComboByName }));
 vi.mock("@/sse/services/keyLimits.js", () => ({ checkKeyLimits: mocks.checkKeyLimits }));
+vi.mock("@/sse/services/comboLimits.js", () => ({ checkComboLimits: mocks.checkComboLimits }));
 vi.mock("@/sse/services/model.js", () => ({ getComboModels: mocks.getComboModels, getModelInfo: mocks.getModelInfo }));
 vi.mock("@/sse/services/auth.js", () => ({
   extractApiKey: () => "sk-chat-test",
@@ -69,6 +71,7 @@ beforeEach(() => {
     apiKey: "provider-key",
   });
   mocks.checkKeyLimits.mockResolvedValue({ allowed: true });
+  mocks.checkComboLimits.mockResolvedValue({ allowed: true });
   mocks.handleChatCore.mockResolvedValue({ success: true, response: new Response("ok") });
   mocks.handleComboChat.mockImplementation(({ handleSingleModel, models }) => handleSingleModel({ model: models[0] }, models[0]));
   mocks.handleFusionChat.mockImplementation(({ handleSingleModel, models }) => handleSingleModel({ model: models[0] }, models[0], true));
@@ -100,6 +103,18 @@ describe("chat token-limit enforcement", () => {
     expect(mocks.handleChatCore).not.toHaveBeenCalled();
   });
 
+  it("blocks a regular combo on the global key limit before combo admission", async () => {
+    mocks.getComboByName.mockResolvedValue({ id: "combo-paid", name: "paid_combo", isFree: false });
+    mocks.getComboModels.mockResolvedValue(["openai/gpt-test"]);
+    mocks.checkKeyLimits.mockResolvedValue({ allowed: false, error: "daily exhausted", retryAfter: 42 });
+
+    const response = await handleChat(requestFor("paid_combo"));
+
+    expect(response.status).toBe(429);
+    expect(mocks.checkComboLimits).not.toHaveBeenCalled();
+    expect(mocks.handleComboChat).not.toHaveBeenCalled();
+  });
+
   it("checks regular combos before routing", async () => {
     mocks.getComboByName.mockResolvedValue({ id: "combo-paid", name: "paid_combo", isFree: false });
     mocks.getComboModels.mockResolvedValue(["openai/gpt-test"]);
@@ -107,12 +122,51 @@ describe("chat token-limit enforcement", () => {
     await handleChat(requestFor("paid_combo"));
 
     expect(mocks.checkKeyLimits).toHaveBeenCalledWith("sk-chat-test");
+    expect(mocks.checkComboLimits).toHaveBeenCalledWith("sk-chat-test", expect.objectContaining({ id: "combo-paid" }));
     expect(mocks.handleChatCore).toHaveBeenCalledOnce();
     expect(mocks.handleChatCore.mock.calls[0][0].clientRawRequest.usageMeta).toMatchObject({
       startedAt: expect.any(String),
       requestedModel: "paid_combo",
       comboPath: [{ id: "combo-paid", name: "paid_combo" }],
     });
+  });
+
+  it("returns a structured 429 when the requested combo is exhausted", async () => {
+    mocks.getComboByName.mockResolvedValue({
+      id: "combo-free",
+      name: "free_combo",
+      isFree: true,
+      limits: { hourly: 1_000 },
+    });
+    mocks.getComboModels.mockResolvedValue(["openai/gpt-test"]);
+    mocks.checkComboLimits.mockResolvedValue({
+      allowed: false,
+      error: "combo exhausted",
+      retryAfter: 42,
+      resetAt: "2026-11-01T06:00:00.000Z",
+      comboId: "combo-free",
+      comboName: "free_combo",
+      period: "hourly",
+      used: 1_050,
+      limit: 1_000,
+    });
+
+    const response = await handleChat(requestFor("free_combo"));
+    const payload = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("42");
+    expect(payload.error).toMatchObject({
+      type: "rate_limit_error",
+      code: "combo_token_limit_exceeded",
+      combo: { id: "combo-free", name: "free_combo" },
+      period: "hourly",
+      used: 1_050,
+      limit: 1_000,
+      resetAt: "2026-11-01T06:00:00.000Z",
+    });
+    expect(mocks.handleComboChat).not.toHaveBeenCalled();
+    expect(mocks.handleChatCore).not.toHaveBeenCalled();
   });
 });
 
