@@ -1,4 +1,4 @@
-import { getApiKeyByValue } from "@/lib/localDb.js";
+import { getApiKeyByValue, getCombos } from "@/lib/localDb.js";
 import { getUsageByApiKey, statsEmitter } from "@/lib/usageDb.js";
 import {
   getComboLimitCounterGeneration,
@@ -134,4 +134,26 @@ export async function checkComboLimits(apiKey, combo) {
     };
   }
   return { allowed: true };
+}
+
+export async function getConfiguredComboUsage(apiKey) {
+  if (!apiKey) return [];
+  const combos = (await getCombos()).filter((combo) => (
+    PERIODS.some((period) => positiveLimit(combo.limits?.[period]))
+  ));
+
+  return Promise.all(combos.map(async (combo) => {
+    const usage = await ensureCounters(apiKey, combo.id);
+    const result = { comboId: combo.id, comboName: combo.name };
+    for (const period of PERIODS) {
+      const limit = positiveLimit(combo.limits?.[period]) ? combo.limits[period] : null;
+      result[period] = {
+        used: usage[period].total,
+        limit,
+        blocked: limit !== null && usage[period].total >= limit,
+        resetAt: nextPeriodStart(period, usage[period].periodStart).toISOString(),
+      };
+    }
+    return result;
+  }));
 }

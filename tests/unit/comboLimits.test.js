@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => {
   const listeners = new Map();
   return {
     getApiKeyByValue: vi.fn(),
+    getCombos: vi.fn(),
     getUsageByApiKey: vi.fn(),
     statsEmitter: {
       on(event, listener) {
@@ -21,13 +22,16 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("@/lib/localDb.js", () => ({ getApiKeyByValue: mocks.getApiKeyByValue }));
+vi.mock("@/lib/localDb.js", () => ({
+  getApiKeyByValue: mocks.getApiKeyByValue,
+  getCombos: mocks.getCombos,
+}));
 vi.mock("@/lib/usageDb.js", () => ({
   getUsageByApiKey: mocks.getUsageByApiKey,
   statsEmitter: mocks.statsEmitter,
 }));
 
-import { checkComboLimits, counters } from "@/sse/services/comboLimits.js";
+import { checkComboLimits, counters, getConfiguredComboUsage } from "@/sse/services/comboLimits.js";
 import { invalidateComboLimitCounters } from "@/shared/utils/comboLimitCounters.js";
 
 const limitedCombo = (id, limits = { hourly: 1_000 }) => ({ id, name: id, limits });
@@ -35,6 +39,7 @@ const limitedCombo = (id, limits = { hourly: 1_000 }) => ({ id, name: id, limits
 beforeEach(() => {
   invalidateComboLimitCounters();
   mocks.getApiKeyByValue.mockReset().mockResolvedValue({ id: "key-id", name: "User A" });
+  mocks.getCombos.mockReset().mockResolvedValue([]);
   mocks.getUsageByApiKey.mockReset().mockResolvedValue(0);
   vi.useRealTimers();
 });
@@ -63,6 +68,27 @@ describe("combo token limit counters", () => {
       retryAfter: expect.any(Number),
     });
     expect(mocks.getUsageByApiKey).toHaveBeenNthCalledWith(1, "sk-secret", expect.any(Date), { comboId: "combo-kimi" });
+  });
+
+  it("reports configured combo periods without exposing the raw key", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 8, 14, 30));
+    mocks.getCombos.mockResolvedValue([
+      { id: "combo-unlimited", name: "unlimited", limits: null },
+      { id: "combo-kimi", name: "free_kimi", limits: { hourly: 1_000, daily: 5_000, weekly: null } },
+    ]);
+    mocks.getUsageByApiKey.mockResolvedValueOnce(1_050).mockResolvedValueOnce(2_000).mockResolvedValueOnce(8_000);
+
+    const result = await getConfiguredComboUsage("sk-secret");
+
+    expect(result).toEqual([{
+      comboId: "combo-kimi",
+      comboName: "free_kimi",
+      hourly: { used: 1_050, limit: 1_000, blocked: true, resetAt: expect.any(String) },
+      daily: { used: 2_000, limit: 5_000, blocked: false, resetAt: expect.any(String) },
+      weekly: { used: 8_000, limit: null, blocked: false, resetAt: expect.any(String) },
+    }]);
+    expect(JSON.stringify(result)).not.toContain("sk-secret");
   });
 
   it("keeps totals independent for each key and combo pair", async () => {

@@ -301,7 +301,7 @@ export default function APIPageClient({ machineId }) {
           const response = await fetch(`/api/keys/${key.id}/usage`);
           if (!response.ok) return [key.id, null];
           const data = await response.json();
-          return [key.id, data.usage || null];
+          return [key.id, data.usage ? { ...data.usage, combos: data.combos || [] } : null];
         } catch {
           return [key.id, null];
         }
@@ -1107,6 +1107,41 @@ export default function APIPageClient({ machineId }) {
                       <LimitProgressBar used={keyUsage[key.id]?.hourly?.used} limit={key.limits.hourly} label="Hourly" />
                       <LimitProgressBar used={keyUsage[key.id]?.daily?.used} limit={key.limits.daily} label="Daily" />
                       <LimitProgressBar used={keyUsage[key.id]?.weekly?.used} limit={key.limits.weekly} label="Weekly" />
+                    </div>
+                  )}
+                  {keyUsage[key.id]?.combos?.length > 0 && editingLimits !== key.id && (
+                    <div className="mt-3 flex max-w-xl flex-col gap-2 rounded-lg border border-border px-2.5 py-2">
+                      <p className="text-xs font-medium">Combo limits</p>
+                      {keyUsage[key.id].combos.map((comboUsage) => {
+                        const periods = ["hourly", "daily", "weekly"];
+                        const blockedPeriod = periods.find((period) => comboUsage[period]?.blocked);
+                        const blockedUsage = blockedPeriod ? comboUsage[blockedPeriod] : null;
+                        return (
+                          <div key={comboUsage.comboId} className="flex flex-col gap-1.5 border-t border-border pt-2 first:border-t-0 first:pt-0">
+                            <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
+                              <code className="font-mono font-medium">{comboUsage.comboName}</code>
+                              {blockedUsage && (
+                                <span className="font-medium text-red-500">
+                                  Blocked on {blockedPeriod} until {new Date(blockedUsage.resetAt).toLocaleString()}
+                                </span>
+                              )}
+                            </div>
+                            {periods.map((period) => {
+                              const periodUsage = comboUsage[period];
+                              if (!periodUsage?.limit) return null;
+                              return (
+                                <div key={period} className={periodUsage.blocked ? "rounded bg-red-500/5 px-1 py-0.5" : ""}>
+                                  <LimitProgressBar
+                                    used={periodUsage.used}
+                                    limit={periodUsage.limit}
+                                    label={`${period[0].toUpperCase() + period.slice(1)}${periodUsage.resetAt ? ` · resets ${new Date(periodUsage.resetAt).toLocaleString()}` : ""}`}
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                   {editingLimits === key.id && (

@@ -21,6 +21,14 @@ describe("API-key limits dashboard", () => {
     expect(source).toContain("Math.min((used / limit) * 100, 100)");
   });
 
+  it("shows combo usage and blocked periods from the existing key poll", () => {
+    expect(source).toContain("data.combos || []");
+    expect(source).toContain("Combo limits");
+    expect(source).toContain("comboUsage.comboName");
+    expect(source).toContain("periodUsage.blocked");
+    expect(source).toContain("periodUsage.resetAt");
+  });
+
   it("does not include the separate model overlay or later rename/filter controls", () => {
     expect(source).not.toContain("allowedModels");
     expect(source).not.toContain("keySearch");
