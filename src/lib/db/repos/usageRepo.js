@@ -338,6 +338,7 @@ export async function getUsageByApiKey(apiKey, since, options = {}) {
   return rows.reduce((total, row) => {
     const meta = parseJson(row.meta, {}) || {};
     if (options.meteredOnly && meta.metered === false) return total;
+    if (options.comboId && !meta.comboPath?.some((combo) => combo?.id === options.comboId)) return total;
     const tokens = parseJson(row.tokens, {}) || {};
     const promptTokens = row.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0;
     const completionTokens = row.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0;

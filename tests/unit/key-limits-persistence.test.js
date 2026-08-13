@@ -188,6 +188,24 @@ describe("free-combo metering persistence", () => {
     });
   });
 
+  it("invalidates a changed combo limit for every cached API key", async () => {
+    const combo = await db.createCombo({
+      name: "combo_cache_invalidation",
+      models: ["provider/one"],
+      limits: { hourly: 100 },
+    });
+    global._comboLimitCounters = new Map([
+      ["sk-one", new Map([[combo.id, { hourly: { total: 10 } }], ["other-combo", { hourly: { total: 20 } }]])],
+      ["sk-two", new Map([[combo.id, { hourly: { total: 30 } }]])],
+    ]);
+
+    await db.updateCombo(combo.id, { limits: { hourly: 200 } });
+
+    expect(global._comboLimitCounters.get("sk-one").has(combo.id)).toBe(false);
+    expect(global._comboLimitCounters.get("sk-one").has("other-combo")).toBe(true);
+    expect(global._comboLimitCounters.has("sk-two")).toBe(false);
+  });
+
   it("keeps free usage in reports while metered totals exclude it", async () => {
     const apiKey = "sk-metered-report-test";
     await db.saveRequestUsage({
@@ -223,6 +241,35 @@ describe("free-combo metering persistence", () => {
     const keyRows = Object.values(stats.byApiKey).filter((row) => row.apiKeyMasked === "sk-meter***");
     expect(keyRows.reduce((sum, row) => sum + row.promptTokens, 0)).toBe(700);
     expect(keyRows.reduce((sum, row) => sum + row.completionTokens, 0)).toBe(550);
+  });
+
+  it("scopes combo usage by stable path IDs while ignoring legacy rows", async () => {
+    const apiKey = "sk-combo-scope-test";
+    await db.saveRequestUsage({
+      timestamp: "2026-07-10T12:00:00.000Z",
+      provider: "openai",
+      model: "nested-model",
+      apiKey,
+      metered: false,
+      status: "error",
+      comboPath: [
+        { id: "combo-parent", name: "BIG" },
+        { id: "combo-child", name: "free_kimi" },
+      ],
+      tokens: { prompt_tokens: 100, completion_tokens: 50 },
+    });
+    await db.saveRequestUsage({
+      timestamp: "2026-07-10T12:01:00.000Z",
+      provider: "openai",
+      model: "legacy-model",
+      apiKey,
+      tokens: { prompt_tokens: 900, completion_tokens: 100 },
+    });
+
+    await expect(db.getUsageByApiKey(apiKey, new Date(0), { comboId: "combo-parent" })).resolves.toBe(150);
+    await expect(db.getUsageByApiKey(apiKey, new Date(0), { comboId: "combo-child" })).resolves.toBe(150);
+    await expect(db.getUsageByApiKey(apiKey, new Date(0), { comboId: "combo-other" })).resolves.toBe(0);
+    await expect(db.getUsageByApiKey(apiKey, new Date(0))).resolves.toBe(1_150);
   });
 
   it("emits exactly one immediate usage event only after a new row is inserted", async () => {

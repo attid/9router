@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { normalizeTokenLimits } from "@/shared/utils/tokenLimits.js";
+import { invalidateComboLimitCounters } from "@/shared/utils/comboLimitCounters.js";
 
 function rowToCombo(row) {
   if (!row) return null;
@@ -83,11 +84,13 @@ export async function updateCombo(id, data) {
     );
     result = merged;
   });
+  if (result && Object.hasOwn(data, "limits")) invalidateComboLimitCounters(id);
   return result;
 }
 
 export async function deleteCombo(id) {
   const db = await getAdapter();
   const res = db.run(`DELETE FROM combos WHERE id = ?`, [id]);
+  if ((res?.changes ?? 0) > 0) invalidateComboLimitCounters(id);
   return (res?.changes ?? 0) > 0;
 }
