@@ -90,6 +90,7 @@ export const TABLES = {
       kind: "TEXT",
       models: "TEXT NOT NULL",
       isFree: "INTEGER DEFAULT 0",
+      limits: "TEXT",
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
     },

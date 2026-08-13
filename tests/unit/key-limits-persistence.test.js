@@ -51,7 +51,12 @@ describe("API-key limits persistence", () => {
 
   it("preserves limits, free-combo flags, and complete usage through export/import", async () => {
     const key = await db.createApiKey("roundtrip", "machine-test", { hourly: 321 });
-    const combo = await db.createCombo({ name: "free_roundtrip", models: ["openai/gpt-test"], isFree: true });
+    const combo = await db.createCombo({
+      name: "free_roundtrip",
+      models: ["openai/gpt-test"],
+      isFree: true,
+      limits: { hourly: 111, daily: 2_222, weekly: 33_333 },
+    });
     const timestamp = "2026-07-10T12:00:00.000Z";
     await db.saveRequestUsage({
       timestamp,
@@ -67,6 +72,11 @@ describe("API-key limits persistence", () => {
 
     expect(snapshot.apiKeys.find((item) => item.id === key.id)?.limits).toEqual({ hourly: 321, daily: null, weekly: null });
     expect(snapshot.combos.find((item) => item.id === combo.id)?.isFree).toBe(true);
+    expect(snapshot.combos.find((item) => item.id === combo.id)?.limits).toEqual({
+      hourly: 111,
+      daily: 2_222,
+      weekly: 33_333,
+    });
     expect(snapshot.usageHistory.find((item) => item.timestamp === timestamp)).toMatchObject({
       apiKey: key.key,
       tokens: { prompt_tokens: 123, completion_tokens: 45, cached_tokens: 67 },
@@ -77,7 +87,10 @@ describe("API-key limits persistence", () => {
     adapter.run("DELETE FROM usageHistory WHERE timestamp = ?", [timestamp]);
     await db.importDb(snapshot);
     await expect(db.getApiKeyById(key.id)).resolves.toMatchObject({ limits: { hourly: 321, daily: null, weekly: null } });
-    await expect(db.getComboById(combo.id)).resolves.toMatchObject({ isFree: true });
+    await expect(db.getComboById(combo.id)).resolves.toMatchObject({
+      isFree: true,
+      limits: { hourly: 111, daily: 2_222, weekly: 33_333 },
+    });
     await expect(db.getUsageByApiKey(key.key, new Date(0))).resolves.toBe(168);
     await expect(db.getUsageByApiKey(key.key, new Date(0), { meteredOnly: true })).resolves.toBe(0);
     const restored = adapter.get("SELECT tokens, meta FROM usageHistory WHERE timestamp = ?", [timestamp]);
@@ -106,12 +119,52 @@ describe("free-combo metering persistence", () => {
   });
 
   it("preserves isFree when unrelated combo fields are updated", async () => {
-    const combo = await db.createCombo({ name: "free_preserved", models: ["provider/one"], isFree: true });
+    const combo = await db.createCombo({
+      name: "free_preserved",
+      models: ["provider/one"],
+      isFree: true,
+      limits: { hourly: 100, daily: 1_000, weekly: 5_000 },
+    });
     await db.updateCombo(combo.id, { models: ["provider/two"] });
 
     await expect(db.getComboById(combo.id)).resolves.toMatchObject({
       models: ["provider/two"],
       isFree: true,
+      limits: { hourly: 100, daily: 1_000, weekly: 5_000 },
+    });
+  });
+
+  it("partially updates and clears combo token limits independently of isFree", async () => {
+    const combo = await db.createCombo({
+      name: "combo_limit_updates",
+      models: ["provider/one"],
+      isFree: false,
+      limits: { hourly: 100, daily: 1_000, weekly: 5_000 },
+    });
+
+    await db.updateCombo(combo.id, { limits: { daily: 2_000 } });
+    await expect(db.getComboById(combo.id)).resolves.toMatchObject({
+      isFree: false,
+      limits: { hourly: 100, daily: 2_000, weekly: 5_000 },
+    });
+
+    await db.updateCombo(combo.id, { limits: null });
+    await expect(db.getComboById(combo.id)).resolves.toMatchObject({
+      isFree: false,
+      limits: null,
+    });
+  });
+
+  it("stores a complete limit shape when partially updating a legacy combo", async () => {
+    const combo = await db.createCombo({
+      name: "legacy_combo_limit_update",
+      models: ["provider/one"],
+    });
+
+    await db.updateCombo(combo.id, { limits: { daily: 2_000 } });
+
+    await expect(db.getComboById(combo.id)).resolves.toMatchObject({
+      limits: { hourly: null, daily: 2_000, weekly: null },
     });
   });
 
