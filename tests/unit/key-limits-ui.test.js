@@ -38,7 +38,18 @@ describe("free combo dashboard and API", () => {
     expect(ui).toContain("Free / unmetered combo");
     expect(ui).toContain("combo.isFree === true");
     expect(ui).toContain("FREE");
-    expect(ui).toContain("await onSave({ name: name.trim(), models, isFree })");
+    expect(ui).toContain("await onSave({ name: name.trim(), models, isFree, limits })");
+  });
+
+  it("configures independent per-key limits for every combo", () => {
+    expect(ui).toContain("Per-key combo token limits");
+    expect(ui).toContain("These limits apply separately to each API key using this combo.");
+    expect(ui).toContain('const [limitValues, setLimitValues] = useState({');
+    expect(ui).toContain('hourly: combo?.limits?.hourly || ""');
+    expect(ui).toContain('value === "" ? null : Number(value)');
+    expect(ui).toContain("await onSave({ name: name.trim(), models, isFree, limits })");
+    expect(ui).toContain("combo.limits?.hourly");
+    expect(ui).toContain("Unlimited");
   });
 
   it("accepts only boolean true for isFree at API boundaries", () => {

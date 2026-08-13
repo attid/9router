@@ -245,6 +245,11 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const isFusion = current === "fusion";
+  const limitBadges = [
+    ["Hourly", combo.limits?.hourly],
+    ["Daily", combo.limits?.daily],
+    ["Weekly", combo.limits?.weekly],
+  ].filter(([, limit]) => limit > 0);
 
   return (
     <Card padding="sm" className="group">
@@ -277,6 +282,15 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
                 <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
               )}
             </div>
+            {limitBadges.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                {limitBadges.map(([label, limit]) => (
+                  <span key={label} className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                    {label} {Number(limit).toLocaleString()}
+                  </span>
+                ))}
+              </div>
+            )}
             {/* Fusion: judge picker (Auto = first model) */}
             {isFusion && (
               <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
@@ -463,6 +477,11 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
   const [isFree, setIsFree] = useState(combo?.isFree === true);
+  const [limitValues, setLimitValues] = useState({
+    hourly: combo?.limits?.hourly || "",
+    daily: combo?.limits?.daily || "",
+    weekly: combo?.limits?.weekly || "",
+  });
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -553,7 +572,10 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
-    await onSave({ name: name.trim(), models, isFree });
+    const limits = Object.fromEntries(
+      Object.entries(limitValues).map(([period, value]) => [period, value === "" ? null : Number(value)]),
+    );
+    await onSave({ name: name.trim(), models, isFree, limits });
     setSaving(false);
   };
 
@@ -587,6 +609,29 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
               <p className="text-[11px] text-text-muted">Requests through this combo do not count against API key token limits.</p>
             </div>
             <Toggle checked={isFree} onChange={setIsFree} />
+          </div>
+
+          <div className="rounded-lg border border-border px-3 py-2.5">
+            <p className="text-sm font-medium">Per-key combo token limits</p>
+            <p className="mt-0.5 text-[11px] text-text-muted">
+              These limits apply separately to each API key using this combo.
+            </p>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {(["hourly", "daily", "weekly"]).map((period) => (
+                <Input
+                  key={period}
+                  label={period[0].toUpperCase() + period.slice(1)}
+                  type="number"
+                  min="1"
+                  value={limitValues[period]}
+                  onChange={(event) => setLimitValues((currentValues) => ({
+                    ...currentValues,
+                    [period]: event.target.value,
+                  }))}
+                  placeholder="Unlimited"
+                />
+              ))}
+            </div>
           </div>
 
           {/* Models */}
