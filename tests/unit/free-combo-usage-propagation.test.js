@@ -34,6 +34,10 @@ describe("usage write metadata", () => {
         requestedModel: "free_combo",
         metered: false,
         startedAt: "2026-11-01T05:30:00.000Z",
+        comboPath: [
+          { id: "combo-big", name: "BIG" },
+          { id: "combo-free", name: "free_combo" },
+        ],
       },
     });
 
@@ -46,12 +50,31 @@ describe("usage write metadata", () => {
       metered: false,
       startedAt: "2026-11-01T05:30:00.000Z",
       timestamp: "2026-11-01T05:30:00.000Z",
+      comboPath: [
+        { id: "combo-big", name: "BIG" },
+        { id: "combo-free", name: "free_combo" },
+      ],
       tokens: {
         prompt_tokens: 400,
         completion_tokens: 40,
         cached_tokens: 100,
       },
     });
+  });
+
+  it("passes the immutable combo path into the usage write", () => {
+    const comboPath = Object.freeze([{ id: "combo-paid", name: "paid_combo" }]);
+
+    saveUsageStats({
+      provider: "openai",
+      model: "paid-model",
+      tokens: { prompt_tokens: 10, completion_tokens: 5 },
+      apiKey: "sk-paid-test",
+      usageMeta: Object.freeze({ comboPath }),
+    });
+
+    expect(mocks.saveRequestUsage.mock.calls[0][0].comboPath).toEqual(comboPath);
+    expect(comboPath).toEqual([{ id: "combo-paid", name: "paid_combo" }]);
   });
 
   it("leaves ordinary writes metered by default", () => {

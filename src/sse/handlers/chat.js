@@ -22,14 +22,20 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { checkKeyLimits } from "../services/keyLimits.js";
 
-function withFreeComboUsage(clientRawRequest, combo) {
-  if (combo?.isFree !== true || clientRawRequest?.usageMeta?.metered === false) return clientRawRequest;
+function withComboUsage(clientRawRequest, combo) {
+  if (!combo?.id || !combo?.name) return clientRawRequest;
+  const current = clientRawRequest?.usageMeta || {};
+  const comboPath = Object.freeze([
+    ...(current.comboPath || []),
+    Object.freeze({ id: combo.id, name: combo.name }),
+  ]);
   return {
     ...clientRawRequest,
     usageMeta: Object.freeze({
-      ...clientRawRequest?.usageMeta,
-      requestedModel: combo.name,
-      metered: false,
+      ...current,
+      comboPath,
+      requestedModel: current.requestedModel || combo.name,
+      metered: current.metered === false || combo.isFree === true ? false : current.metered,
     }),
   };
 }
@@ -139,7 +145,7 @@ export async function handleChat(request, clientRawRequest = null) {
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
-    const comboClientRawRequest = withFreeComboUsage(clientRawRequest, requestedCombo);
+    const comboClientRawRequest = withComboUsage(clientRawRequest, requestedCombo);
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
@@ -194,7 +200,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     if (comboModels) {
       const chatSettings = await getSettings();
       const combo = await getComboByName(modelStr);
-      const comboClientRawRequest = withFreeComboUsage(clientRawRequest, combo);
+      const comboClientRawRequest = withComboUsage(clientRawRequest, combo);
       // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
       const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;

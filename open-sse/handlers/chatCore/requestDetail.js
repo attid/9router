@@ -104,5 +104,6 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     endpoint: endpoint || null,
     ...(usageMeta?.requestedModel ? { requestedModel: usageMeta.requestedModel } : {}),
     ...(usageMeta && Object.hasOwn(usageMeta, "metered") ? { metered: usageMeta.metered } : {}),
+    ...(usageMeta?.comboPath ? { comboPath: usageMeta.comboPath } : {}),
   }).catch(() => {});
 }

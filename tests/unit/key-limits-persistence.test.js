@@ -66,6 +66,10 @@ describe("API-key limits persistence", () => {
       apiKey: key.key,
       requestedModel: combo.name,
       metered: false,
+      comboPath: [
+        { id: "combo-parent", name: "BIG" },
+        { id: combo.id, name: combo.name },
+      ],
       tokens: { prompt_tokens: 123, completion_tokens: 45, cached_tokens: 67 },
     });
     const snapshot = await db.exportDb();
@@ -80,7 +84,15 @@ describe("API-key limits persistence", () => {
     expect(snapshot.usageHistory.find((item) => item.timestamp === timestamp)).toMatchObject({
       apiKey: key.key,
       tokens: { prompt_tokens: 123, completion_tokens: 45, cached_tokens: 67 },
-      meta: { requestedModel: combo.name, metered: false, startedAt: timestamp },
+      meta: {
+        requestedModel: combo.name,
+        metered: false,
+        startedAt: timestamp,
+        comboPath: [
+          { id: "combo-parent", name: "BIG" },
+          { id: combo.id, name: combo.name },
+        ],
+      },
     });
 
     const adapter = await (await import("@/lib/db/driver.js")).getAdapter();
@@ -95,7 +107,15 @@ describe("API-key limits persistence", () => {
     await expect(db.getUsageByApiKey(key.key, new Date(0), { meteredOnly: true })).resolves.toBe(0);
     const restored = adapter.get("SELECT tokens, meta FROM usageHistory WHERE timestamp = ?", [timestamp]);
     expect(JSON.parse(restored.tokens)).toMatchObject({ cached_tokens: 67 });
-    expect(JSON.parse(restored.meta)).toEqual({ requestedModel: combo.name, metered: false, startedAt: timestamp });
+    expect(JSON.parse(restored.meta)).toEqual({
+      requestedModel: combo.name,
+      metered: false,
+      startedAt: timestamp,
+      comboPath: [
+        { id: "combo-parent", name: "BIG" },
+        { id: combo.id, name: combo.name },
+      ],
+    });
   });
 
   it("rejects legacy imports that restore positive limits without usage history", async () => {

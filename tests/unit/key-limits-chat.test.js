@@ -101,7 +101,7 @@ describe("chat token-limit enforcement", () => {
   });
 
   it("checks regular combos before routing", async () => {
-    mocks.getComboByName.mockResolvedValue({ name: "paid_combo", isFree: false });
+    mocks.getComboByName.mockResolvedValue({ id: "combo-paid", name: "paid_combo", isFree: false });
     mocks.getComboModels.mockResolvedValue(["openai/gpt-test"]);
 
     await handleChat(requestFor("paid_combo"));
@@ -110,13 +110,15 @@ describe("chat token-limit enforcement", () => {
     expect(mocks.handleChatCore).toHaveBeenCalledOnce();
     expect(mocks.handleChatCore.mock.calls[0][0].clientRawRequest.usageMeta).toMatchObject({
       startedAt: expect.any(String),
+      requestedModel: "paid_combo",
+      comboPath: [{ id: "combo-paid", name: "paid_combo" }],
     });
   });
 });
 
 describe("free-combo usage metadata", () => {
   it("bypasses limits and marks ordinary combo writes unmetered", async () => {
-    mocks.getComboByName.mockResolvedValue({ name: "free_combo", isFree: true });
+    mocks.getComboByName.mockResolvedValue({ id: "combo-free", name: "free_combo", isFree: true });
     mocks.getComboModels.mockResolvedValue(["openai/gpt-test"]);
 
     await handleChat(requestFor("free_combo"));
@@ -126,6 +128,7 @@ describe("free-combo usage metadata", () => {
       requestedModel: "free_combo",
       metered: false,
       startedAt: expect.any(String),
+      comboPath: [{ id: "combo-free", name: "free_combo" }],
     });
   });
 
@@ -135,7 +138,7 @@ describe("free-combo usage metadata", () => {
       comboStrategy: "fallback",
       comboStrategies: { free_fusion: { fallbackStrategy: "fusion", judgeModel: "openai/judge" } },
     });
-    mocks.getComboByName.mockResolvedValue({ name: "free_fusion", isFree: true });
+    mocks.getComboByName.mockResolvedValue({ id: "combo-fusion", name: "free_fusion", isFree: true });
     mocks.getComboModels.mockResolvedValue(["openai/panel"]);
     mocks.handleFusionChat.mockImplementation(async ({ handleSingleModel }) => {
       await handleSingleModel({ model: "openai/panel" }, "openai/panel", true);
@@ -150,13 +153,19 @@ describe("free-combo usage metadata", () => {
         requestedModel: "free_fusion",
         metered: false,
         startedAt: expect.any(String),
+        comboPath: [{ id: "combo-fusion", name: "free_fusion" }],
       });
       expect(Object.isFrozen(options.clientRawRequest.usageMeta)).toBe(true);
+      expect(Object.isFrozen(options.clientRawRequest.usageMeta.comboPath)).toBe(true);
     }
   });
 
   it("does not lose an outer free marker when nested combo routing is encountered", async () => {
-    mocks.getComboByName.mockImplementation(async (name) => ({ name, isFree: name === "outer_free" }));
+    mocks.getComboByName.mockImplementation(async (name) => ({
+      id: name === "outer_free" ? "combo-outer" : "combo-nested",
+      name,
+      isFree: name === "outer_free",
+    }));
     mocks.getComboModels.mockImplementation(async (name) => {
       if (name === "outer_free") return ["nested_paid"];
       if (name === "nested_paid") return ["openai/gpt-test"];
@@ -172,6 +181,10 @@ describe("free-combo usage metadata", () => {
       requestedModel: "outer_free",
       metered: false,
       startedAt: expect.any(String),
+      comboPath: [
+        { id: "combo-outer", name: "outer_free" },
+        { id: "combo-nested", name: "nested_paid" },
+      ],
     });
   });
 });

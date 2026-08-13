@@ -253,6 +253,7 @@ export async function saveRequestUsage(entry) {
     if (entry.requestedModel) meta.requestedModel = entry.requestedModel;
     if (entry.metered !== undefined) meta.metered = entry.metered;
     if (entry.startedAt) meta.startedAt = entry.startedAt;
+    if (entry.comboPath) meta.comboPath = entry.comboPath;
 
     let inserted = false;
 
