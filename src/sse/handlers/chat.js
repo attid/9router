@@ -22,6 +22,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { checkKeyLimits } from "../services/keyLimits.js";
 import { checkComboLimits } from "../services/comboLimits.js";
+import { saveComboLimitDetail } from "open-sse/handlers/chatCore/requestDetail.js";
 
 function withComboUsage(clientRawRequest, combo) {
   if (!combo?.id || !combo?.name) return clientRawRequest;
@@ -71,6 +72,22 @@ function comboLimitResponse(limitCheck) {
       ...(limitCheck.retryAfter ? { "Retry-After": String(limitCheck.retryAfter) } : {}),
     },
   });
+}
+
+function handleComboLimitFailure(limitCheck, clientRawRequest, action, apiKey) {
+  saveComboLimitDetail({
+    action,
+    usageMeta: clientRawRequest?.usageMeta,
+    limitCheck,
+  }).catch(() => {});
+  log.warn("COMBO_LIMIT", `${action}: ${limitCheck.comboName} ${limitCheck.period}`, {
+    apiKey: apiKey ? log.maskKey(apiKey) : null,
+    comboId: limitCheck.comboId,
+    used: limitCheck.used,
+    limit: limitCheck.limit,
+    retryAfter: limitCheck.retryAfter,
+  });
+  return comboLimitResponse(limitCheck);
 }
 
 /**
@@ -168,9 +185,11 @@ export async function handleChat(request, clientRawRequest = null) {
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
-    const comboLimitCheck = await checkComboLimits(apiKey, requestedCombo);
-    if (!comboLimitCheck.allowed) return comboLimitResponse(comboLimitCheck);
     const comboClientRawRequest = withComboUsage(clientRawRequest, requestedCombo);
+    const comboLimitCheck = await checkComboLimits(apiKey, requestedCombo);
+    if (!comboLimitCheck.allowed) {
+      return handleComboLimitFailure(comboLimitCheck, comboClientRawRequest, "blocked", apiKey);
+    }
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
@@ -225,9 +244,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     if (comboModels) {
       const chatSettings = await getSettings();
       const combo = await getComboByName(modelStr);
-      const comboLimitCheck = await checkComboLimits(apiKey, combo);
-      if (!comboLimitCheck.allowed) return comboLimitResponse(comboLimitCheck);
       const comboClientRawRequest = withComboUsage(clientRawRequest, combo);
+      const comboLimitCheck = await checkComboLimits(apiKey, combo);
+      if (!comboLimitCheck.allowed) {
+        return handleComboLimitFailure(comboLimitCheck, comboClientRawRequest, "branch_skipped", apiKey);
+      }
       // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
       const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;

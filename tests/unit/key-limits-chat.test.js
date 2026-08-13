@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   handleChatCore: vi.fn(),
   handleComboChat: vi.fn(),
   handleFusionChat: vi.fn(),
+  saveComboLimitDetail: vi.fn(),
 }));
 
 vi.mock("open-sse/index.js", () => ({}));
@@ -26,6 +27,7 @@ vi.mock("@/sse/services/auth.js", () => ({
   clearAccountError: vi.fn(),
 }));
 vi.mock("open-sse/handlers/chatCore.js", () => ({ handleChatCore: mocks.handleChatCore }));
+vi.mock("open-sse/handlers/chatCore/requestDetail.js", () => ({ saveComboLimitDetail: mocks.saveComboLimitDetail }));
 vi.mock("open-sse/services/combo.js", () => ({
   handleComboChat: mocks.handleComboChat,
   handleFusionChat: mocks.handleFusionChat,
@@ -72,6 +74,7 @@ beforeEach(() => {
   });
   mocks.checkKeyLimits.mockResolvedValue({ allowed: true });
   mocks.checkComboLimits.mockResolvedValue({ allowed: true });
+  mocks.saveComboLimitDetail.mockResolvedValue(undefined);
   mocks.handleChatCore.mockResolvedValue({ success: true, response: new Response("ok") });
   mocks.handleComboChat.mockImplementation(({ handleSingleModel, models }) => handleSingleModel({ model: models[0] }, models[0]));
   mocks.handleFusionChat.mockImplementation(({ handleSingleModel, models }) => handleSingleModel({ model: models[0] }, models[0], true));
@@ -149,6 +152,8 @@ describe("chat token-limit enforcement", () => {
       period: "hourly",
       used: 1_050,
       limit: 1_000,
+      apiKeyId: "key-1",
+      apiKeyName: "User A",
     });
 
     const response = await handleChat(requestFor("free_combo"));
@@ -167,6 +172,14 @@ describe("chat token-limit enforcement", () => {
     });
     expect(mocks.handleComboChat).not.toHaveBeenCalled();
     expect(mocks.handleChatCore).not.toHaveBeenCalled();
+    expect(mocks.saveComboLimitDetail).toHaveBeenCalledOnce();
+    expect(mocks.saveComboLimitDetail).toHaveBeenCalledWith(expect.objectContaining({
+      action: "blocked",
+      usageMeta: expect.objectContaining({
+        requestedModel: "free_combo",
+        comboPath: [{ id: "combo-free", name: "free_combo" }],
+      }),
+    }));
   });
 });
 

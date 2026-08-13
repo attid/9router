@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   checkKeyLimits: vi.fn(),
   checkComboLimits: vi.fn(),
   handleChatCore: vi.fn(),
+  saveComboLimitDetail: vi.fn(),
 }));
 
 vi.mock("open-sse/index.js", () => ({}));
@@ -24,6 +25,7 @@ vi.mock("@/sse/services/auth.js", () => ({
   clearAccountError: vi.fn(),
 }));
 vi.mock("open-sse/handlers/chatCore.js", () => ({ handleChatCore: mocks.handleChatCore }));
+vi.mock("open-sse/handlers/chatCore/requestDetail.js", () => ({ saveComboLimitDetail: mocks.saveComboLimitDetail }));
 vi.mock("open-sse/providers/capabilities.js", () => ({ getCapabilitiesForModel: () => ({}) }));
 vi.mock("open-sse/utils/claudeHeaderCache.js", () => ({ cacheClaudeHeaders: vi.fn() }));
 vi.mock("open-sse/utils/error.js", () => ({
@@ -85,6 +87,7 @@ beforeEach(() => {
     apiKey: "provider-key",
   });
   mocks.checkKeyLimits.mockResolvedValue({ allowed: true });
+  mocks.saveComboLimitDetail.mockResolvedValue(undefined);
   mocks.checkComboLimits.mockImplementation(async (_apiKey, combo) => combo.id === "combo-kimi"
     ? {
       allowed: false,
@@ -96,6 +99,8 @@ beforeEach(() => {
       period: "hourly",
       used: 1_050,
       limit: 1_000,
+      apiKeyId: "key-1",
+      apiKeyName: "User A",
     }
     : { allowed: true });
   mocks.handleChatCore.mockImplementation(async ({ modelInfo, clientRawRequest }) => ({
@@ -125,6 +130,17 @@ describe("nested combo token limit routing", () => {
     ]);
     expect(mocks.checkKeyLimits).not.toHaveBeenCalled();
     expect(mocks.handleChatCore).toHaveBeenCalledOnce();
+    expect(mocks.saveComboLimitDetail).toHaveBeenCalledOnce();
+    expect(mocks.saveComboLimitDetail).toHaveBeenCalledWith(expect.objectContaining({
+      action: "branch_skipped",
+      usageMeta: expect.objectContaining({
+        requestedModel: "BIG",
+        comboPath: [
+          { id: "combo-big", name: "BIG" },
+          { id: "combo-kimi", name: "free_kimi" },
+        ],
+      }),
+    }));
   });
 
   it("blocks an exhausted parent before trying any child", async () => {
@@ -139,6 +155,8 @@ describe("nested combo token limit routing", () => {
       period: "hourly",
       used: 2_000,
       limit: 1_000,
+      apiKeyId: "key-1",
+      apiKeyName: "User A",
     });
 
     const response = await handleChat(requestFor("BIG"));

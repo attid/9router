@@ -290,6 +290,11 @@ export default function RequestDetailsTab() {
                     </td>
                     <td className="max-w-[260px] truncate p-4 font-mono text-sm text-text-main">
                       {detail.model}
+                      {detail.eventType === "combo_limit" && (
+                        <span className="ml-2 rounded bg-red-500/10 px-1.5 py-0.5 font-sans text-[10px] font-medium text-red-500">
+                          Combo limit
+                        </span>
+                      )}
                     </td>
                     <td className="max-w-[180px] truncate p-4 text-sm text-text-main">
                        <span className="font-medium">
@@ -351,6 +356,32 @@ export default function RequestDetailsTab() {
       >
         {selectedDetail && (
           <div className="space-y-6">
+            {selectedDetail.eventType === "combo_limit" && (
+              <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-4 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-semibold text-red-600 dark:text-red-400">Combo limit</p>
+                  <span className="rounded bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-500">
+                    {selectedDetail.status === "branch_skipped" ? "Branch skipped" : "Request blocked"}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <p><span className="text-text-muted">API key:</span> {selectedDetail.apiKeyIdentity?.name || selectedDetail.apiKeyIdentity?.id || "Unknown"}</p>
+                  <p><span className="text-text-muted">Root model:</span> <code>{selectedDetail.routing?.rootModel}</code></p>
+                  <p><span className="text-text-muted">Period:</span> {selectedDetail.limit?.period}</p>
+                  <p><span className="text-text-muted">Usage:</span> {(selectedDetail.limit?.used || 0).toLocaleString()} / {(selectedDetail.limit?.limit || 0).toLocaleString()}</p>
+                  <p className="sm:col-span-2"><span className="text-text-muted">Reset:</span> {selectedDetail.limit.resetAt ? new Date(selectedDetail.limit.resetAt).toLocaleString() : "Unknown"}</p>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-1 text-xs">
+                  <span className="text-text-muted">Route:</span>
+                  {selectedDetail.routing.comboPath.map((combo, index) => (
+                    <span key={`${combo.id}-${index}`} className="inline-flex items-center gap-1">
+                      {index > 0 && <span className="text-text-muted">→</span>}
+                      <code className="rounded bg-black/5 px-1.5 py-0.5 dark:bg-white/5">{combo.name}</code>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="grid min-w-0 grid-cols-1 gap-4 text-sm sm:grid-cols-2">
               <div>
                 <span className="text-text-muted">ID:</span>{" "}

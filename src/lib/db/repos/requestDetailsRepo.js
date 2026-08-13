@@ -98,6 +98,12 @@ async function flushToDatabase() {
             providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
             providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
             response: truncateField(item.response, config.maxJsonSize),
+            eventType: item.eventType || null,
+            routing: item.routing ? truncateField(item.routing, config.maxJsonSize) : null,
+            apiKeyIdentity: item.apiKeyIdentity
+              ? { id: item.apiKeyIdentity.id || null, name: item.apiKeyIdentity.name || null }
+              : null,
+            limit: item.limit || null,
           };
 
           db.run(
