@@ -8,6 +8,7 @@ import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifi
 import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { getActiveComboProviders, getComboModelName, normalizeComboModels } from "@/lib/comboUtils.js";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -42,7 +43,7 @@ export default function CombosPage() {
       // Only LLM combos here - webSearch/webFetch combos belong to media-providers/web
       if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind || c.kind === "llm"));
       if (providersRes.ok) {
-        setActiveProviders(providersData.connections || []);
+        setActiveProviders(getActiveComboProviders(providersData.connections));
       }
       if (modelsRes.ok) {
         const md = await modelsRes.json();
@@ -271,12 +272,17 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
               {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
               ) : (
-                combo.models.slice(0, 3).map((model, index) => (
+                combo.models.slice(0, 3).map((entry, index) => {
+                  const model = getComboModelName(entry);
+                  const weight = typeof entry === "string" ? 1 : (entry.weight ?? 1);
+                  return (
                   <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
                     <span>{model}</span>
+                    {weight !== 1 && <span className="text-[9px] text-primary">×{weight}</span>}
                     <CapacityBadges caps={modelCaps[model]} />
                   </code>
-                ))
+                  );
+                })
               )}
               {combo.models.length > 3 && (
                 <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
@@ -301,7 +307,7 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
                   title="Pick the model that fuses panel answers"
                 >
                   <span className="material-symbols-outlined text-[13px]">gavel</span>
-                  <span className="truncate">{judge || `Auto — ${combo.models[0] || "first model"}`}</span>
+                  <span className="truncate">{judge || `Auto — ${getComboModelName(combo.models[0]) || "first model"}`}</span>
                 </button>
                 {judge && (
                   <button
@@ -374,7 +380,7 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
   );
 }
 
-function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({ id, index, model, weight, isFirst, isLast, onEdit, onWeightChange, onMoveUp, onMoveDown, onRemove }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -440,6 +446,18 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
         </div>
       )}
 
+      <label className="flex shrink-0 items-center gap-1 text-[10px] text-text-muted" title="Round-robin weight; 0 means fallback-only">
+        Weight
+        <input
+          type="number"
+          min="0"
+          step="1"
+          value={weight}
+          onChange={(e) => onWeightChange(Math.max(0, Number.parseInt(e.target.value, 10) || 0))}
+          className="w-12 rounded border border-black/10 bg-white px-1 py-0.5 text-center font-mono text-xs text-text-main outline-none focus:border-primary dark:border-white/10 dark:bg-black/20"
+        />
+      </label>
+
       {/* Priority arrows */}
       <div className="flex shrink-0 items-center gap-0.5">
         <button
@@ -475,7 +493,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
 function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
-  const [models, setModels] = useState(combo?.models || []);
+  const [models, setModels] = useState(() => normalizeComboModels(combo?.models));
   const [isFree, setIsFree] = useState(combo?.isFree === true);
   const [limitValues, setLimitValues] = useState({
     hourly: combo?.limits?.hourly || "",
@@ -493,7 +511,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   );
 
   // Use stable index-based IDs so duplicates and similar names are handled correctly
-  const modelItems = models.map((model, i) => ({ uid: `item-${i}`, model }));
+  const modelItems = models.map((entry, i) => ({ uid: `item-${i}`, entry }));
 
   const handleDragEnd = (event) => {
     const { active, over } = event;
@@ -542,13 +560,13 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   };
 
   const handleAddModel = (model) => {
-    if (!models.includes(model.value)) {
-      setModels([...models, model.value]);
+    if (!models.some((entry) => entry.model === model.value)) {
+      setModels([...models, { model: model.value, weight: 1 }]);
     }
   };
 
   const handleDeselectModel = (model) => {
-    setModels(models.filter((m) => m !== model.value));
+    setModels(models.filter((entry) => entry.model !== model.value));
   };
 
   const handleRemoveModel = (index) => {
@@ -647,17 +665,23 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} modifiers={[restrictToVerticalAxis, restrictToParentElement]}>
               <SortableContext items={modelItems.map((m) => m.uid)} strategy={verticalListSortingStrategy}>
                 <div className="flex max-h-[55vh] min-w-0 flex-col gap-1 overflow-y-auto sm:max-h-[350px]">
-                  {modelItems.map(({ uid, model }, index) => (
+                  {modelItems.map(({ uid, entry }, index) => (
                     <ModelItem
                       key={uid}
                       id={uid}
                       index={index}
-                      model={model}
+                      model={entry.model}
+                      weight={entry.weight}
                       isFirst={index === 0}
                       isLast={index === modelItems.length - 1}
                       onEdit={(newVal) => {
                         const updated = [...models];
-                        updated[index] = newVal;
+                        updated[index] = { ...updated[index], model: newVal };
+                        setModels(updated);
+                      }}
+                      onWeightChange={(weight) => {
+                        const updated = [...models];
+                        updated[index] = { ...updated[index], weight };
                         setModels(updated);
                       }}
                       onMoveUp={() => handleMoveUp(index)}
@@ -669,6 +693,9 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
               </SortableContext>
             </DndContext>
             )}
+            <p className="mt-1 text-[10px] text-text-muted">
+              Positive weights control Round Robin. Weight 0 is fallback-only. Fusion ignores weights.
+            </p>
 
             {/* Add Model button */}
             <button
@@ -707,7 +734,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
         modelAliases={modelAliases}
         title="Add Model to Combo"
         kindFilter={kindFilter}
-        addedModelValues={models}
+        addedModelValues={models.map(getComboModelName)}
         closeOnSelect={false}
       />
     </>

@@ -154,12 +154,16 @@ describe("DB SQLite layer — public API parity", () => {
   it("combos: CRUD", async () => {
     const c = await sqliteDb.createCombo({ name: "combo1", models: ["m1", "m2"], kind: "fallback" });
     expect(c.id).toBeDefined();
-    expect(c.models).toEqual(["m1", "m2"]);
+    expect(c.models).toEqual([
+      { model: "m1", weight: 1 },
+      { model: "m2", weight: 1 },
+    ]);
     const byName = await sqliteDb.getComboByName("combo1");
     expect(byName.id).toBe(c.id);
-    await sqliteDb.updateCombo(c.id, { models: ["m3"] });
+    expect(byName.models).toEqual(c.models);
+    await sqliteDb.updateCombo(c.id, { models: [{ model: "m3", weight: 4 }] });
     const updated = await sqliteDb.getComboById(c.id);
-    expect(updated.models).toEqual(["m3"]);
+    expect(updated.models).toEqual([{ model: "m3", weight: 4 }]);
     expect(await sqliteDb.deleteCombo(c.id)).toBe(true);
   });
 

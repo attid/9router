@@ -80,7 +80,7 @@ export async function getModelInfo(modelStr) {
 
 /**
  * Check if model is a combo and get models list
- * @returns {Promise<string[]|null>} Array of models or null if not a combo
+ * @returns {Promise<(string|{model: string, weight?: number})[]|null>} Combo members or null
  */
 export async function getComboModels(modelStr) {
   // Only check if it's not in provider/model format

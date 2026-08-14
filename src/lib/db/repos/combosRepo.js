@@ -3,6 +3,7 @@ import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { normalizeTokenLimits } from "@/shared/utils/tokenLimits.js";
 import { invalidateComboLimitCounters } from "@/shared/utils/comboLimitCounters.js";
+import { normalizeComboModels } from "../../comboUtils.js";
 
 function rowToCombo(row) {
   if (!row) return null;
@@ -10,7 +11,7 @@ function rowToCombo(row) {
     id: row.id,
     name: row.name,
     kind: row.kind,
-    models: parseJson(row.models, []),
+    models: normalizeComboModels(parseJson(row.models, [])),
     isFree: row.isFree === 1 || row.isFree === true,
     limits: parseJson(row.limits, null),
     createdAt: row.createdAt,
@@ -43,7 +44,7 @@ export async function createCombo(data) {
     id: uuidv4(),
     name: data.name,
     kind: data.kind || null,
-    models: data.models || [],
+    models: normalizeComboModels(data.models),
     isFree: data.isFree === true,
     limits: normalizeTokenLimits(data.limits),
     createdAt: now,
@@ -63,6 +64,9 @@ export async function updateCombo(id, data) {
     const row = db.get(`SELECT * FROM combos WHERE id = ?`, [id]);
     if (!row) return;
     const current = rowToCombo(row);
+    const updates = Object.prototype.hasOwnProperty.call(data, "models")
+      ? { ...data, models: normalizeComboModels(data.models) }
+      : data;
     const limits = Object.hasOwn(data, "limits")
       ? (data.limits === null
         ? null
@@ -73,7 +77,7 @@ export async function updateCombo(id, data) {
       : current.limits;
     const merged = {
       ...current,
-      ...data,
+      ...updates,
       isFree: Object.hasOwn(data, "isFree") ? data.isFree === true : current.isFree,
       limits,
       updatedAt: new Date().toISOString(),
