@@ -18,6 +18,14 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
+import {
+  applyKeyRenameResponse,
+  filterApiKeys,
+  keepDraftAfterKeyRename,
+  maskApiKey,
+  saveApiKeyName,
+  sortApiKeysByName,
+} from "./endpointKeyUtils";
 
 function LimitProgressBar({ used = 0, limit, label }) {
   if (!limit) return null;
@@ -105,6 +113,10 @@ export default function APIPageClient({ machineId }) {
   const [keyUsage, setKeyUsage] = useState({});
   const [editingLimits, setEditingLimits] = useState(null);
   const [editLimitsValues, setEditLimitsValues] = useState({ hourly: "", daily: "", weekly: "" });
+  const [keySearch, setKeySearch] = useState("");
+  const [keyNameDraft, setKeyNameDraft] = useState(null);
+  const [pendingKeyNameIds, setPendingKeyNameIds] = useState(new Set());
+  const pendingKeyNameIdsRef = useRef(new Set());
 
   // Client-side local/remote detection (UI hint only, not a security gate)
   const [isRemoteHost, setIsRemoteHost] = useState(false);
@@ -114,6 +126,7 @@ export default function APIPageClient({ machineId }) {
   }, []);
 
   const { copied, copy } = useCopyToClipboard();
+  const visibleApiKeys = filterApiKeys(sortApiKeysByName(keys), keySearch);
 
   // Security gate: block remote exposure while dashboard uses default password or login is off.
   const isLoginUnsafe = !requireLogin || !hasPassword;
@@ -829,9 +842,34 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
-  const maskKey = (fullKey) => {
-    if (!fullKey || fullKey.length <= 10) return fullKey || "";
-    return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
+  const cancelKeyRename = () => {
+    setKeyNameDraft(null);
+  };
+
+  const handleSaveKeyName = async (id) => {
+    if (keyNameDraft?.id !== id) return;
+    const name = keyNameDraft.value.trim();
+    if (!name) return;
+
+    try {
+      const result = await saveApiKeyName(id, name, {
+        pendingIds: pendingKeyNameIdsRef.current,
+        onPendingChange: (keyId, pending) => {
+          setPendingKeyNameIds(prev => {
+            const next = new Set(prev);
+            if (pending) next.add(keyId);
+            else next.delete(keyId);
+            return next;
+          });
+        },
+      });
+      if (result.status === "saved") {
+        setKeys(prev => applyKeyRenameResponse(prev, id, result.key));
+        setKeyNameDraft(current => keepDraftAfterKeyRename(current, id, name));
+      }
+    } catch (error) {
+      console.log("Error renaming key:", error);
+    }
   };
 
   const toggleKeyVisibility = (keyId) => {
@@ -1154,16 +1192,76 @@ export default function APIPageClient({ machineId }) {
           </div>
         ) : (
           <div className="flex flex-col">
-            {keys.map((key) => (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 pb-4">
+              <Input
+                size="sm"
+                value={keySearch}
+                onChange={(event) => setKeySearch(event.target.value)}
+                placeholder="Filter by name or key..."
+              />
+              <p className="text-xs text-text-muted shrink-0">
+                {visibleApiKeys.length} / {keys.length} keys
+              </p>
+            </div>
+            {visibleApiKeys.length === 0 ? (
+              <div className="text-center py-10 border-t border-border">
+                <p className="text-sm font-medium text-text-main">No keys match this filter</p>
+                <button
+                  onClick={() => setKeySearch("")}
+                  className="mt-2 text-sm text-primary hover:underline"
+                >
+                  Clear filter
+                </button>
+              </div>
+            ) : visibleApiKeys.map((key) => (
               <div
                 key={key.id}
                 className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{key.name}</p>
+                  {keyNameDraft?.id === key.id ? (
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-1">
+                      <Input
+                        size="sm"
+                        value={keyNameDraft.value}
+                        onChange={(event) => setKeyNameDraft({ id: key.id, value: event.target.value })}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") handleSaveKeyName(key.id);
+                          if (event.key === "Escape") cancelKeyRename();
+                        }}
+                        disabled={pendingKeyNameIds.has(key.id)}
+                        autoFocus
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          disabled={pendingKeyNameIds.has(key.id) || !keyNameDraft.value.trim()}
+                          onClick={() => handleSaveKeyName(key.id)}
+                        >
+                          {pendingKeyNameIds.has(key.id) ? "Saving..." : "Save"}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={cancelKeyRename}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">{key.name}</p>
+                      <button
+                        onClick={() => {
+                          setKeyNameDraft({ id: key.id, value: key.name || "" });
+                        }}
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                        title="Rename key"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">edit</span>
+                      </button>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 mt-1">
                     <code className="text-xs text-text-muted font-mono">
-                      {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
+                      {visibleKeys.has(key.id) ? key.key : maskApiKey(key.key)}
                     </code>
                     <button
                       onClick={() => toggleKeyVisibility(key.id)}
