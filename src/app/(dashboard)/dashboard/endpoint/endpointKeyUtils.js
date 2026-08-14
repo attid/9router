@@ -1,3 +1,5 @@
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
+
 const API_KEY_NAME_COLLATOR = new Intl.Collator("en", { sensitivity: "base" });
 
 function compareStrings(left, right) {
@@ -41,7 +43,7 @@ export async function saveApiKeyName(
   pendingIds.add(id);
   onPendingChange(id, true);
   try {
-    const response = await fetchImpl(`/api/keys/${id}`, {
+    const response = await fetchImpl(withBasePath(`/api/keys/${id}`), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),

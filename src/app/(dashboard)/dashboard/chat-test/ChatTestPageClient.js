@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button, Card, Input, ModelSelectModal, Select } from "@/shared/components";
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import {
   buildRequestPayload,
   extractAssistantText,
@@ -57,10 +58,10 @@ export default function ChatTestPageClient() {
     async function loadInitialData() {
       try {
         const [providersResponse, aliasesResponse, settingsResponse, keysResponse] = await Promise.all([
-          fetch("/api/providers"),
-          fetch("/api/models/alias"),
-          fetch("/api/settings"),
-          fetch("/api/keys"),
+          fetch(withBasePath("/api/providers")),
+          fetch(withBasePath("/api/models/alias")),
+          fetch(withBasePath("/api/settings")),
+          fetch(withBasePath("/api/keys")),
         ]);
 
         if (providersResponse.ok) {
@@ -157,7 +158,9 @@ export default function ChatTestPageClient() {
       if (requireApiKey && !selectedKeyId) throw new Error("Select API key");
       if (selectedKeyId && !selectedKey) throw new Error("Selected key is no longer available");
 
-      const endpoint = apiMode === "responses" ? "/api/v1/responses" : "/api/v1/chat/completions";
+      const endpoint = apiMode === "responses"
+        ? withBasePath("/api/v1/responses")
+        : withBasePath("/api/v1/chat/completions");
       const headers = { "Content-Type": "application/json" };
       if (selectedKey?.key) headers.Authorization = `Bearer ${selectedKey.key}`;
 

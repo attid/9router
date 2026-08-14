@@ -314,8 +314,8 @@ export default function APIPageClient({ machineId }) {
   const loadModelSelectData = async () => {
     try {
       const [providersRes, aliasesRes] = await Promise.all([
-        fetch("/api/providers"),
-        fetch("/api/models/alias"),
+        fetch(withBasePath("/api/providers")),
+        fetch(withBasePath("/api/models/alias")),
       ]);
       if (providersRes.ok) {
         const data = await providersRes.json();
@@ -339,7 +339,7 @@ export default function APIPageClient({ machineId }) {
     const fetchUsage = async () => {
       const entries = await Promise.all(keys.map(async (key) => {
         try {
-          const response = await fetch(`/api/keys/${key.id}/usage`);
+          const response = await fetch(withBasePath(`/api/keys/${key.id}/usage`));
           if (!response.ok) return [key.id, null];
           const data = await response.json();
           return [key.id, data.usage ? { ...data.usage, combos: data.combos || [] } : null];
@@ -777,7 +777,7 @@ export default function APIPageClient({ machineId }) {
   const updateAllowedModels = async (keyId, models) => {
     const allowedModels = models.length > 0 ? models : null;
     try {
-      const res = await fetch(`/api/keys/${keyId}`, {
+      const res = await fetch(withBasePath(`/api/keys/${keyId}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ allowedModels }),
@@ -829,7 +829,7 @@ export default function APIPageClient({ machineId }) {
       Object.entries(editLimitsValues).map(([period, value]) => [period, value === "" ? null : Number(value)]),
     );
     try {
-      const response = await fetch(`/api/keys/${keyId}`, {
+      const response = await fetch(withBasePath(`/api/keys/${keyId}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ limits }),
