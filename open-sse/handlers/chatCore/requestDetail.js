@@ -74,6 +74,36 @@ export function buildRequestDetail(base, overrides = {}) {
   };
 }
 
+export function saveComboLimitDetail({ action, usageMeta, limitCheck }) {
+  return saveRequestDetail({
+    provider: "combo",
+    model: limitCheck.comboName,
+    timestamp: new Date().toISOString(),
+    status: action,
+    eventType: "combo_limit",
+    latency: {},
+    tokens: {},
+    request: {},
+    response: {},
+    routing: {
+      rootModel: usageMeta?.requestedModel || limitCheck.comboName,
+      comboPath: usageMeta?.comboPath || [],
+      blockedCombo: { id: limitCheck.comboId, name: limitCheck.comboName },
+    },
+    apiKeyIdentity: {
+      id: limitCheck.apiKeyId || null,
+      name: limitCheck.apiKeyName || null,
+    },
+    limit: {
+      period: limitCheck.period,
+      used: limitCheck.used,
+      limit: limitCheck.limit,
+      retryAfter: limitCheck.retryAfter,
+      resetAt: limitCheck.resetAt,
+    },
+  });
+}
+
 export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, usageMeta, label = "USAGE" }) {
   if (!tokens || typeof tokens !== "object") return;
 
@@ -104,5 +134,6 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     endpoint: endpoint || null,
     ...(usageMeta?.requestedModel ? { requestedModel: usageMeta.requestedModel } : {}),
     ...(usageMeta && Object.hasOwn(usageMeta, "metered") ? { metered: usageMeta.metered } : {}),
+    ...(usageMeta?.comboPath ? { comboPath: usageMeta.comboPath } : {}),
   }).catch(() => {});
 }

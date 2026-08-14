@@ -2,6 +2,7 @@
 import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
 import { invalidateKeyLimitCounters } from "@/shared/utils/keyLimitCounters.js";
+import { invalidateComboLimitCounters } from "@/shared/utils/comboLimitCounters.js";
 
 // Settings
 export {
@@ -81,7 +82,7 @@ export async function exportDb() {
     providerNodes: db.all(`SELECT * FROM providerNodes`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, type: r.type, name: r.name, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     proxyPools: db.all(`SELECT * FROM proxyPools`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, isActive: r.isActive === 1, testStatus: r.testStatus, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     apiKeys: db.all(`SELECT * FROM apiKeys`).map((r) => ({ id: r.id, key: r.key, name: r.name, machineId: r.machineId, limits: parseJson(r.limits, null), isActive: r.isActive === 1, allowedModels: parseJson(r.allowedModels, null), createdAt: r.createdAt })),
-    combos: db.all(`SELECT * FROM combos`).map((r) => ({ id: r.id, name: r.name, kind: r.kind, models: parseJson(r.models, []), isFree: r.isFree === 1, createdAt: r.createdAt, updatedAt: r.updatedAt })),
+    combos: db.all(`SELECT * FROM combos`).map((r) => ({ id: r.id, name: r.name, kind: r.kind, models: parseJson(r.models, []), isFree: r.isFree === 1, limits: parseJson(r.limits, null), createdAt: r.createdAt, updatedAt: r.updatedAt })),
     modelAliases: {},
     customModels: [],
     mitmAlias: {},
@@ -183,8 +184,8 @@ export async function importDb(payload) {
     }
     for (const c of payload.combos || []) {
       db.run(
-        `INSERT OR REPLACE INTO combos(id, name, kind, models, isFree, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
-        [c.id, c.name, c.kind || null, stringifyJson(c.models || []), c.isFree === true ? 1 : 0, c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
+        `INSERT OR REPLACE INTO combos(id, name, kind, models, isFree, limits, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+        [c.id, c.name, c.kind || null, stringifyJson(c.models || []), c.isFree === true ? 1 : 0, stringifyJson(c.limits || null), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
       );
     }
     for (const [a, m] of Object.entries(payload.modelAliases || {})) {
@@ -231,6 +232,7 @@ export async function importDb(payload) {
   });
 
   invalidateKeyLimitCounters();
+  invalidateComboLimitCounters();
   const { rebuildUsageDaily, resetUsageCaches } = await import("./repos/usageRepo.js");
   resetUsageCaches();
   if (hasUsageHistory && !hasUsageDaily) await rebuildUsageDaily();

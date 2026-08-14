@@ -21,15 +21,23 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { checkKeyLimits } from "../services/keyLimits.js";
+import { checkComboLimits } from "../services/comboLimits.js";
+import { saveComboLimitDetail } from "open-sse/handlers/chatCore/requestDetail.js";
 
-function withFreeComboUsage(clientRawRequest, combo) {
-  if (combo?.isFree !== true || clientRawRequest?.usageMeta?.metered === false) return clientRawRequest;
+function withComboUsage(clientRawRequest, combo) {
+  if (!combo?.id || !combo?.name) return clientRawRequest;
+  const current = clientRawRequest?.usageMeta || {};
+  const comboPath = Object.freeze([
+    ...(current.comboPath || []),
+    Object.freeze({ id: combo.id, name: combo.name }),
+  ]);
   return {
     ...clientRawRequest,
     usageMeta: Object.freeze({
-      ...clientRawRequest?.usageMeta,
-      requestedModel: combo.name,
-      metered: false,
+      ...current,
+      comboPath,
+      requestedModel: current.requestedModel || combo.name,
+      metered: current.metered === false || combo.isFree === true ? false : current.metered,
     }),
   };
 }
@@ -42,6 +50,44 @@ function withUsageStartedAt(clientRawRequest, startedAt) {
       startedAt,
     }),
   };
+}
+
+function comboLimitResponse(limitCheck) {
+  return new Response(JSON.stringify({
+    error: {
+      message: limitCheck.error,
+      type: "rate_limit_error",
+      code: "combo_token_limit_exceeded",
+      combo: { id: limitCheck.comboId, name: limitCheck.comboName },
+      period: limitCheck.period,
+      used: limitCheck.used,
+      limit: limitCheck.limit,
+      resetAt: limitCheck.resetAt,
+    },
+    retryAfter: limitCheck.resetAt || null,
+  }), {
+    status: HTTP_STATUS.RATE_LIMITED,
+    headers: {
+      "Content-Type": "application/json",
+      ...(limitCheck.retryAfter ? { "Retry-After": String(limitCheck.retryAfter) } : {}),
+    },
+  });
+}
+
+function handleComboLimitFailure(limitCheck, clientRawRequest, action, apiKey) {
+  saveComboLimitDetail({
+    action,
+    usageMeta: clientRawRequest?.usageMeta,
+    limitCheck,
+  }).catch(() => {});
+  log.warn("COMBO_LIMIT", `${action}: ${limitCheck.comboName} ${limitCheck.period}`, {
+    apiKey: apiKey ? log.maskKey(apiKey) : null,
+    comboId: limitCheck.comboId,
+    used: limitCheck.used,
+    limit: limitCheck.limit,
+    retryAfter: limitCheck.retryAfter,
+  });
+  return comboLimitResponse(limitCheck);
 }
 
 /**
@@ -129,7 +175,11 @@ export async function handleChat(request, clientRawRequest = null) {
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
-    const comboClientRawRequest = withFreeComboUsage(clientRawRequest, requestedCombo);
+    const comboClientRawRequest = withComboUsage(clientRawRequest, requestedCombo);
+    const comboLimitCheck = await checkComboLimits(apiKey, requestedCombo);
+    if (!comboLimitCheck.allowed) {
+      return handleComboLimitFailure(comboLimitCheck, comboClientRawRequest, "blocked", apiKey);
+    }
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
@@ -184,7 +234,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     if (comboModels) {
       const chatSettings = await getSettings();
       const combo = await getComboByName(modelStr);
-      const comboClientRawRequest = withFreeComboUsage(clientRawRequest, combo);
+      const comboClientRawRequest = withComboUsage(clientRawRequest, combo);
+      const comboLimitCheck = await checkComboLimits(apiKey, combo);
+      if (!comboLimitCheck.allowed) {
+        return handleComboLimitFailure(comboLimitCheck, comboClientRawRequest, "branch_skipped", apiKey);
+      }
       // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
       const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;

@@ -132,6 +132,7 @@ describe("Schema migrations", () => {
         name: "free_legacy",
         models: ["openai/gpt-test"],
         isFree: true,
+        limits: { hourly: 200, daily: 2_000, weekly: 10_000 },
         createdAt: timestamp,
         updatedAt: timestamp,
       }],
@@ -156,6 +157,11 @@ describe("Schema migrations", () => {
       weekly: 5_000,
     });
     expect(db.get("SELECT isFree FROM combos WHERE id = 'free-combo'").isFree).toBe(1);
+    expect(JSON.parse(db.get("SELECT limits FROM combos WHERE id = 'free-combo'").limits)).toEqual({
+      hourly: 200,
+      daily: 2_000,
+      weekly: 10_000,
+    });
     expect(JSON.parse(db.get("SELECT meta FROM usageHistory LIMIT 1").meta)).toEqual({
       requestedModel: "free_legacy",
       metered: false,

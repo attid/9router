@@ -7,14 +7,17 @@ const mocks = vi.hoisted(() => ({
   getModelInfo: vi.fn(),
   getProviderCredentials: vi.fn(),
   checkKeyLimits: vi.fn(),
+  checkComboLimits: vi.fn(),
   handleChatCore: vi.fn(),
   handleComboChat: vi.fn(),
   handleFusionChat: vi.fn(),
+  saveComboLimitDetail: vi.fn(),
 }));
 
 vi.mock("open-sse/index.js", () => ({}));
 vi.mock("@/lib/localDb", () => ({ getSettings: mocks.getSettings, getComboByName: mocks.getComboByName }));
 vi.mock("@/sse/services/keyLimits.js", () => ({ checkKeyLimits: mocks.checkKeyLimits }));
+vi.mock("@/sse/services/comboLimits.js", () => ({ checkComboLimits: mocks.checkComboLimits }));
 vi.mock("@/sse/services/model.js", () => ({ getComboModels: mocks.getComboModels, getModelInfo: mocks.getModelInfo }));
 vi.mock("@/sse/services/auth.js", () => ({
   extractApiKey: () => "sk-chat-test",
@@ -24,6 +27,7 @@ vi.mock("@/sse/services/auth.js", () => ({
   clearAccountError: vi.fn(),
 }));
 vi.mock("open-sse/handlers/chatCore.js", () => ({ handleChatCore: mocks.handleChatCore }));
+vi.mock("open-sse/handlers/chatCore/requestDetail.js", () => ({ saveComboLimitDetail: mocks.saveComboLimitDetail }));
 vi.mock("open-sse/services/combo.js", () => ({
   handleComboChat: mocks.handleComboChat,
   handleFusionChat: mocks.handleFusionChat,
@@ -69,6 +73,8 @@ beforeEach(() => {
     apiKey: "provider-key",
   });
   mocks.checkKeyLimits.mockResolvedValue({ allowed: true });
+  mocks.checkComboLimits.mockResolvedValue({ allowed: true });
+  mocks.saveComboLimitDetail.mockResolvedValue(undefined);
   mocks.handleChatCore.mockResolvedValue({ success: true, response: new Response("ok") });
   mocks.handleComboChat.mockImplementation(({ handleSingleModel, models }) => handleSingleModel({ model: models[0] }, models[0]));
   mocks.handleFusionChat.mockImplementation(({ handleSingleModel, models }) => handleSingleModel({ model: models[0] }, models[0], true));
@@ -100,23 +106,86 @@ describe("chat token-limit enforcement", () => {
     expect(mocks.handleChatCore).not.toHaveBeenCalled();
   });
 
+  it("blocks a regular combo on the global key limit before combo admission", async () => {
+    mocks.getComboByName.mockResolvedValue({ id: "combo-paid", name: "paid_combo", isFree: false });
+    mocks.getComboModels.mockResolvedValue(["openai/gpt-test"]);
+    mocks.checkKeyLimits.mockResolvedValue({ allowed: false, error: "daily exhausted", retryAfter: 42 });
+
+    const response = await handleChat(requestFor("paid_combo"));
+
+    expect(response.status).toBe(429);
+    expect(mocks.checkComboLimits).not.toHaveBeenCalled();
+    expect(mocks.handleComboChat).not.toHaveBeenCalled();
+  });
+
   it("checks regular combos before routing", async () => {
-    mocks.getComboByName.mockResolvedValue({ name: "paid_combo", isFree: false });
+    mocks.getComboByName.mockResolvedValue({ id: "combo-paid", name: "paid_combo", isFree: false });
     mocks.getComboModels.mockResolvedValue(["openai/gpt-test"]);
 
     await handleChat(requestFor("paid_combo"));
 
     expect(mocks.checkKeyLimits).toHaveBeenCalledWith("sk-chat-test");
+    expect(mocks.checkComboLimits).toHaveBeenCalledWith("sk-chat-test", expect.objectContaining({ id: "combo-paid" }));
     expect(mocks.handleChatCore).toHaveBeenCalledOnce();
     expect(mocks.handleChatCore.mock.calls[0][0].clientRawRequest.usageMeta).toMatchObject({
       startedAt: expect.any(String),
+      requestedModel: "paid_combo",
+      comboPath: [{ id: "combo-paid", name: "paid_combo" }],
     });
+  });
+
+  it("returns a structured 429 when the requested combo is exhausted", async () => {
+    mocks.getComboByName.mockResolvedValue({
+      id: "combo-free",
+      name: "free_combo",
+      isFree: true,
+      limits: { hourly: 1_000 },
+    });
+    mocks.getComboModels.mockResolvedValue(["openai/gpt-test"]);
+    mocks.checkComboLimits.mockResolvedValue({
+      allowed: false,
+      error: "combo exhausted",
+      retryAfter: 42,
+      resetAt: "2026-11-01T06:00:00.000Z",
+      comboId: "combo-free",
+      comboName: "free_combo",
+      period: "hourly",
+      used: 1_050,
+      limit: 1_000,
+      apiKeyId: "key-1",
+      apiKeyName: "User A",
+    });
+
+    const response = await handleChat(requestFor("free_combo"));
+    const payload = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("42");
+    expect(payload.error).toMatchObject({
+      type: "rate_limit_error",
+      code: "combo_token_limit_exceeded",
+      combo: { id: "combo-free", name: "free_combo" },
+      period: "hourly",
+      used: 1_050,
+      limit: 1_000,
+      resetAt: "2026-11-01T06:00:00.000Z",
+    });
+    expect(mocks.handleComboChat).not.toHaveBeenCalled();
+    expect(mocks.handleChatCore).not.toHaveBeenCalled();
+    expect(mocks.saveComboLimitDetail).toHaveBeenCalledOnce();
+    expect(mocks.saveComboLimitDetail).toHaveBeenCalledWith(expect.objectContaining({
+      action: "blocked",
+      usageMeta: expect.objectContaining({
+        requestedModel: "free_combo",
+        comboPath: [{ id: "combo-free", name: "free_combo" }],
+      }),
+    }));
   });
 });
 
 describe("free-combo usage metadata", () => {
   it("bypasses limits and marks ordinary combo writes unmetered", async () => {
-    mocks.getComboByName.mockResolvedValue({ name: "free_combo", isFree: true });
+    mocks.getComboByName.mockResolvedValue({ id: "combo-free", name: "free_combo", isFree: true });
     mocks.getComboModels.mockResolvedValue(["openai/gpt-test"]);
 
     await handleChat(requestFor("free_combo"));
@@ -126,6 +195,7 @@ describe("free-combo usage metadata", () => {
       requestedModel: "free_combo",
       metered: false,
       startedAt: expect.any(String),
+      comboPath: [{ id: "combo-free", name: "free_combo" }],
     });
   });
 
@@ -135,7 +205,7 @@ describe("free-combo usage metadata", () => {
       comboStrategy: "fallback",
       comboStrategies: { free_fusion: { fallbackStrategy: "fusion", judgeModel: "openai/judge" } },
     });
-    mocks.getComboByName.mockResolvedValue({ name: "free_fusion", isFree: true });
+    mocks.getComboByName.mockResolvedValue({ id: "combo-fusion", name: "free_fusion", isFree: true });
     mocks.getComboModels.mockResolvedValue(["openai/panel"]);
     mocks.handleFusionChat.mockImplementation(async ({ handleSingleModel }) => {
       await handleSingleModel({ model: "openai/panel" }, "openai/panel", true);
@@ -150,13 +220,19 @@ describe("free-combo usage metadata", () => {
         requestedModel: "free_fusion",
         metered: false,
         startedAt: expect.any(String),
+        comboPath: [{ id: "combo-fusion", name: "free_fusion" }],
       });
       expect(Object.isFrozen(options.clientRawRequest.usageMeta)).toBe(true);
+      expect(Object.isFrozen(options.clientRawRequest.usageMeta.comboPath)).toBe(true);
     }
   });
 
   it("does not lose an outer free marker when nested combo routing is encountered", async () => {
-    mocks.getComboByName.mockImplementation(async (name) => ({ name, isFree: name === "outer_free" }));
+    mocks.getComboByName.mockImplementation(async (name) => ({
+      id: name === "outer_free" ? "combo-outer" : "combo-nested",
+      name,
+      isFree: name === "outer_free",
+    }));
     mocks.getComboModels.mockImplementation(async (name) => {
       if (name === "outer_free") return ["nested_paid"];
       if (name === "nested_paid") return ["openai/gpt-test"];
@@ -172,6 +248,10 @@ describe("free-combo usage metadata", () => {
       requestedModel: "outer_free",
       metered: false,
       startedAt: expect.any(String),
+      comboPath: [
+        { id: "combo-outer", name: "outer_free" },
+        { id: "combo-nested", name: "nested_paid" },
+      ],
     });
   });
 });

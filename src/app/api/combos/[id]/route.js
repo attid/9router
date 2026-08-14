@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getComboById, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { normalizeTokenLimits } from "@/shared/utils/tokenLimits.js";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -43,6 +44,13 @@ export async function PUT(request, { params }) {
 
     if (Object.hasOwn(body, "isFree")) {
       body.isFree = body.isFree === true;
+    }
+    if (Object.hasOwn(body, "limits")) {
+      try {
+        body.limits = normalizeTokenLimits(body.limits, { partial: true });
+      } catch (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
     }
     
     // Capture previous name to invalidate rotation state on rename
