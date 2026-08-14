@@ -1,5 +1,5 @@
 import {
-  extractApiKey, isValidApiKey,
+  authorizeModelRequest,
   getProviderCredentials, markAccountUnavailable,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
@@ -33,14 +33,9 @@ export async function handleTts(request) {
   log.request("POST", `${url.pathname} | ${modelStr} | format=${responseFormat}${language ? ` | lang=${language}` : ""}`);
 
   const settings = await getSettings();
-  if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
-    if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-  }
-
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  const authorization = await authorizeModelRequest(request, { model: modelStr, settings });
+  if (authorization.response) return authorization.response;
   if (!body.input) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
 
   // Combo expansion: model may be a combo name → run fallback/round-robin across models

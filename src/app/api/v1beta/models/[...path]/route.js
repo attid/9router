@@ -1,8 +1,8 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import {
   clearAccountError,
+  authorizeModelRequest,
   getProviderCredentials,
-  isValidApiKey,
   markAccountUnavailable,
 } from "@/sse/services/auth.js";
 import { getSettings } from "@/lib/localDb";
@@ -123,17 +123,6 @@ export async function POST(request, { params }) {
   }
 }
 
-function extractGeminiClientApiKey(request) {
-  const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
-
-  const googleApiKey = request.headers.get("x-goog-api-key");
-  if (googleApiKey) return googleApiKey;
-
-  const url = new URL(request.url);
-  return url.searchParams.get("key");
-}
-
 function normalizeGeminiNativeModel(model) {
   return String(model || "")
     .replace(/^models\//, "")
@@ -175,23 +164,6 @@ function buildGeminiNativeUrl(requestUrl, model, action) {
   }
 
   return upstreamUrl.toString();
-}
-
-async function validateGeminiNativeClientKey(request) {
-  const settings = await getSettings();
-  if (!settings.requireApiKey) return null;
-
-  const apiKey = extractGeminiClientApiKey(request);
-  if (!apiKey) {
-    return Response.json({ error: { message: "Missing API key" } }, { status: 401 });
-  }
-
-  const valid = await isValidApiKey(apiKey);
-  if (!valid) {
-    return Response.json({ error: { message: "Invalid API key" } }, { status: 401 });
-  }
-
-  return null;
 }
 
 function buildGeminiNativeAuthHeaders(credentials) {
@@ -236,8 +208,9 @@ function getSafeGeminiNativeErrorText(error) {
 }
 
 async function forwardGeminiNativeRequest(request, body, model, action) {
-  const authError = await validateGeminiNativeClientKey(request);
-  if (authError) return authError;
+  const settings = await getSettings();
+  const authorization = await authorizeModelRequest(request, { model, settings });
+  if (authorization.response) return authorization.response;
 
   const modelId = normalizeGeminiNativeModel(model);
   if (!GEMINI_NATIVE_MODEL_PATTERN.test(modelId)) {

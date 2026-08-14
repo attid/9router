@@ -65,6 +65,25 @@ describe("DB SQLite layer — public API parity", () => {
     expect(await sqliteDb.getApiKeyById(k.id)).toBeNull();
   });
 
+  it("apiKeys: persists, looks up, updates, and clears allowed models", async () => {
+    const k = await sqliteDb.createApiKey("restricted-key", "machine-models", {
+      allowedModels: ["openai/gpt-5", "production-combo"],
+    });
+
+    expect(k.allowedModels).toEqual(["openai/gpt-5", "production-combo"]);
+    expect((await sqliteDb.getApiKeyById(k.id)).allowedModels).toEqual([
+      "openai/gpt-5",
+      "production-combo",
+    ]);
+    expect((await sqliteDb.getApiKeyByValue(k.key)).id).toBe(k.id);
+
+    const updated = await sqliteDb.updateApiKey(k.id, { allowedModels: ["anthropic/claude-sonnet-4-5"] });
+    expect(updated.allowedModels).toEqual(["anthropic/claude-sonnet-4-5"]);
+
+    await sqliteDb.updateApiKey(k.id, { allowedModels: [] });
+    expect((await sqliteDb.getApiKeyById(k.id)).allowedModels).toBeNull();
+  });
+
   it("providerConnections: CRUD + reorder by priority", async () => {
     const c1 = await sqliteDb.createProviderConnection({ provider: "test", authType: "apikey", name: "a", apiKey: "k1" });
     const c2 = await sqliteDb.createProviderConnection({ provider: "test", authType: "apikey", name: "b", apiKey: "k2" });
@@ -245,6 +264,19 @@ describe("DB SQLite layer — public API parity", () => {
 
     await sqliteDb.importDb(snap);
     expect((await sqliteDb.getModelAliases()).marker).toBe("before");
+  });
+
+  it("exportDb / importDb preserves API-key allowed models", async () => {
+    const key = await sqliteDb.createApiKey("exported-restrictions", "machine-export", {
+      allowedModels: ["openai/gpt-5"],
+    });
+    const snapshot = await sqliteDb.exportDb();
+
+    expect(snapshot.apiKeys.find((item) => item.id === key.id)?.allowedModels).toEqual(["openai/gpt-5"]);
+
+    await sqliteDb.updateApiKey(key.id, { allowedModels: null });
+    await sqliteDb.importDb(snapshot);
+    expect((await sqliteDb.getApiKeyById(key.id)).allowedModels).toEqual(["openai/gpt-5"]);
   });
 
   it("pricing: user pricing merged with constants", async () => {

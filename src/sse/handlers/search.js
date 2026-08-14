@@ -3,7 +3,7 @@ import {
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
-  isValidApiKey,
+  authorizeModelRequest,
 } from "../services/auth.js";
 import { getSettings, getCombos } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
@@ -44,24 +44,14 @@ export async function handleSearch(request) {
     log.debug("AUTH", "No API key provided (local mode)");
   }
 
-  // Enforce API key if enabled in settings
   const settings = await getSettings();
-  if (settings.requireApiKey) {
-    if (!apiKey) {
-      log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
-      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-    }
-  }
-
   if (!providerInput || typeof providerInput !== "string") {
     log.warn("SEARCH", "Missing provider/model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: provider (or model)");
   }
+
+  const authorization = await authorizeModelRequest(request, { model: providerInput, settings });
+  if (authorization.response) return authorization.response;
 
   if (!query || typeof query !== "string" || !query.trim()) {
     log.warn("SEARCH", "Missing query");

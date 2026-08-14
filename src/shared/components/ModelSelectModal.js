@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
 import ProviderIcon from "./ProviderIcon";
@@ -32,6 +32,7 @@ export default function ModelSelectModal({
   kindFilter = null,
   addedModelValues = [],
   closeOnSelect = true,
+  useRequestFacingValues = false,
 }) {
   // Filter activeProviders by serviceKinds when kindFilter set (e.g. "webSearch", "webFetch")
   const filteredActiveProviders = useMemo(() => {
@@ -180,6 +181,7 @@ export default function ModelSelectModal({
             id: fullModel.replace(`${alias}/`, ""),
             name: aliasName,
             value: fullModel,
+            requestValue: aliasName,
           }));
         const customRegisteredModels = customModels
           .filter((m) => m.providerAlias === alias)
@@ -247,6 +249,7 @@ export default function ModelSelectModal({
             id: fullModel.replace(`${providerId}/`, ""),
             name: aliasName,
             value: `${nodePrefix}/${fullModel.replace(`${providerId}/`, "")}`,
+            requestValue: aliasName,
           }));
 
         // Merge custom models registered via /api/models/custom for this provider
@@ -294,7 +297,7 @@ export default function ModelSelectModal({
           )
           .map(([aliasName, fullModel]) => {
             const modelId = fullModel.replace(`${alias}/`, "");
-            return { id: modelId, name: aliasName, value: fullModel, isCustom: true };
+            return { id: modelId, name: aliasName, value: fullModel, requestValue: aliasName, isCustom: true };
           });
 
         // Custom models registered via /api/models/custom (provider "Add Model" button)
@@ -360,11 +363,15 @@ export default function ModelSelectModal({
   }, [combos, searchQuery, kindFilter]);
 
   // Sort models alphabetically, with added models floated to top
-  const sortModels = (models) => {
-    const added = models.filter(m => addedModelValues.includes(m.value)).sort((a, b) => a.name.localeCompare(b.name));
-    const rest = models.filter(m => !addedModelValues.includes(m.value)).sort((a, b) => a.name.localeCompare(b.name));
+  const getSelectionValue = useCallback((model) => (
+    useRequestFacingValues ? model.requestValue || model.value : model.value
+  ), [useRequestFacingValues]);
+
+  const sortModels = useCallback((models) => {
+    const added = models.filter(m => addedModelValues.includes(getSelectionValue(m))).sort((a, b) => a.name.localeCompare(b.name));
+    const rest = models.filter(m => !addedModelValues.includes(getSelectionValue(m))).sort((a, b) => a.name.localeCompare(b.name));
     return [...added, ...rest];
-  };
+  }, [addedModelValues, getSelectionValue]);
 
   // Filter models by search query
   const filteredGroups = useMemo(() => {
@@ -389,10 +396,12 @@ export default function ModelSelectModal({
     });
 
     return filtered;
-  }, [groupedModels, searchQuery, addedModelValues]);
+  }, [groupedModels, searchQuery, sortModels]);
 
   const handleSelect = (model) => {
-    const value = model?.value || model?.name || model;
+    const value = useRequestFacingValues
+      ? model?.requestValue || model?.value || model?.name || model
+      : model?.value || model?.name || model;
     const isAdded = addedModelValues.includes(value);
 
     if (isAdded && onDeselect) {
@@ -501,7 +510,8 @@ export default function ModelSelectModal({
 
             <div className="flex flex-wrap gap-1.5">
               {group.models.map((model) => {
-                const isSelected = selectedModel === model.value;
+                const selectionValue = getSelectionValue(model);
+                const isSelected = selectedModel === selectionValue;
                 const isPlaceholder = model.isPlaceholder;
                 return (
                   <button
@@ -514,14 +524,14 @@ export default function ModelSelectModal({
                         ? "border-dashed border-border text-text-muted hover:border-primary/50 hover:text-primary bg-surface italic"
                         : isSelected
                           ? "bg-primary text-white border-primary"
-                          : addedModelValues.includes(model.value)
+                          : addedModelValues.includes(selectionValue)
                             ? "bg-primary border-primary text-white hover:bg-primary-hover"
                             : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
                       }
                     `}
                   >
                     <span className="flex items-center gap-1">
-                      {addedModelValues.includes(model.value) && !isPlaceholder && (
+                      {addedModelValues.includes(selectionValue) && !isPlaceholder && (
                         <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
                       )}
                       {isPlaceholder ? (
@@ -578,4 +588,5 @@ ModelSelectModal.propTypes = {
   kindFilter: PropTypes.string,
   addedModelValues: PropTypes.arrayOf(PropTypes.string),
   closeOnSelect: PropTypes.bool,
+  useRequestFacingValues: PropTypes.bool,
 };
