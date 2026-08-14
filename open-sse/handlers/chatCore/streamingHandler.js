@@ -43,7 +43,7 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, streamController, onStreamComplete, streamDetailId }) {
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, streamController, onStreamComplete, streamDetailId, providerUrl }) {
   if (onRequestSuccess) {
     Promise.resolve()
       .then(onRequestSuccess)
@@ -69,6 +69,18 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     const status = providerResponse.status || 502;
     console.warn(`[STREAM] ${provider} | ${model} | blocked pipe: ${shortMsg} [${status}]`);
     streamController?.handleError?.(new Error(`upstream non-SSE: ${status}`));
+    saveRequestDetail(buildRequestDetail({
+      provider, model, connectionId, apiKey,
+      latency: { ttft: 0, total: Date.now() - requestStartTime },
+      tokens: { prompt_tokens: 0, completion_tokens: 0 },
+      request: extractRequestConfig(body, stream),
+      providerRequest: finalBody || translatedBody || null,
+      providerResponse: shortMsg,
+      clientEndpoint: clientRawRequest?.endpoint || null,
+      providerUrl: providerUrl || null,
+      response: { error: shortMsg, status, thinking: null },
+      status: "error",
+    })).catch(() => {});
     return {
       success: false,
       response: new Response(JSON.stringify({ error: { message: `[${status}]: ${shortMsg}` } }), {
@@ -84,14 +96,41 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
   const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
-  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
+  const onStreamFailure = (error, streamTrace, terminal = { status: "error" }) => {
+    const cancelled = terminal.status === "cancelled";
+    const message = String(error?.message || "Streaming response failed").slice(0, 500);
+    const statusCode = cancelled ? 499 : 502;
+    saveRequestDetail(buildRequestDetail({
+      provider, model, connectionId, apiKey,
+      latency: { ttft: 0, total: Date.now() - requestStartTime },
+      tokens: { prompt_tokens: 0, completion_tokens: 0 },
+      request: extractRequestConfig(body, stream),
+      providerRequest: finalBody || translatedBody || null,
+      providerResponse: message,
+      clientEndpoint: clientRawRequest?.endpoint || null,
+      providerUrl: providerUrl || null,
+      streamTrace,
+      response: { error: message, status: statusCode, thinking: null, type: "streaming" },
+      status: cancelled ? "cancelled" : "error",
+    }, { id: streamDetailId })).catch(() => {});
+  };
+  const transformedBody = pipeWithDisconnect(
+    providerResponse,
+    transformStream,
+    streamController,
+    onAbortTerminal,
+    stallTimeoutMs,
+    onStreamFailure
+  );
 
-  saveRequestDetail(buildRequestDetail({
-    provider, model, connectionId,
+  await saveRequestDetail(buildRequestDetail({
+    provider, model, connectionId, apiKey,
     latency: { ttft: 0, total: Date.now() - requestStartTime },
     tokens: { prompt_tokens: 0, completion_tokens: 0 },
     request: extractRequestConfig(body, stream),
     providerRequest: finalBody || translatedBody || null,
+    clientEndpoint: clientRawRequest?.endpoint || null,
+    providerUrl: providerUrl || null,
     providerResponse: "[Streaming - raw response not captured]",
     response: { content: "[Streaming in progress...]", thinking: null, type: "streaming" },
     status: "success"
@@ -108,7 +147,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 /**
  * Build onStreamComplete callback for streaming usage tracking.
  */
-export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest }) {
+export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, providerUrl }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
   const onStreamComplete = (contentObj, usage, ttftAt) => {
@@ -120,12 +159,15 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     const safeThinking = contentObj?.thinking || null;
 
     saveRequestDetail(buildRequestDetail({
-      provider, model, connectionId,
+      provider, model, connectionId, apiKey,
       latency,
       tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       providerRequest: finalBody || translatedBody || null,
       providerResponse: safeContent,
+      clientEndpoint: clientRawRequest?.endpoint || null,
+      providerUrl: providerUrl || null,
+      streamTrace: contentObj?.meta || null,
       response: { content: safeContent, thinking: safeThinking, type: "streaming" },
       status: "success"
     }, { id: streamDetailId })).catch(err => {

@@ -6,6 +6,7 @@ const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 const DEFAULT_MAX_JSON_SIZE = 5 * 1024;
 const CONFIG_CACHE_TTL_MS = 5000;
+const EXPORT_BATCH_SIZE = 100;
 
 let cachedConfig = null;
 let cachedConfigTs = 0;
@@ -41,7 +42,7 @@ async function getObservabilityConfig() {
 
 let writeBuffer = [];
 let flushTimer = null;
-let isFlushing = false;
+let activeFlushPromise = null;
 
 function sanitizeHeaders(headers) {
   if (!headers || typeof headers !== "object") return {};
@@ -51,6 +52,25 @@ function sanitizeHeaders(headers) {
     if (sensitiveKeys.some((s) => key.toLowerCase().includes(s))) delete sanitized[key];
   }
   return sanitized;
+}
+
+function sanitizeUrl(value) {
+  if (!value || typeof value !== "string") return null;
+  const sensitiveKeys = ["api_key", "apikey", "key", "token", "access_token", "auth", "authorization"];
+  try {
+    const isAbsolute = /^[a-z][a-z\d+.-]*:\/\//i.test(value);
+    const url = new URL(value, "http://request-details.local");
+    url.username = "";
+    url.password = "";
+    for (const key of [...url.searchParams.keys()]) {
+      if (sensitiveKeys.some((sensitive) => key.toLowerCase().includes(sensitive))) {
+        url.searchParams.set(key, "[REDACTED]");
+      }
+    }
+    return isAbsolute ? url.toString() : `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return value.split("?")[0];
+  }
 }
 
 function generateDetailId(model) {
@@ -68,11 +88,11 @@ function truncateField(obj, maxSize) {
   return obj || {};
 }
 
-async function flushToDatabase() {
-  if (isFlushing) return;
-  if (writeBuffer.length === 0) return;
-  isFlushing = true;
-  try {
+function flushToDatabase() {
+  if (activeFlushPromise) return activeFlushPromise;
+  if (writeBuffer.length === 0) return Promise.resolve();
+  activeFlushPromise = (async () => {
+    try {
     // Drain entire buffer (loop in case more pushed during await)
     while (writeBuffer.length > 0) {
       const items = writeBuffer.splice(0, writeBuffer.length);
@@ -85,11 +105,21 @@ async function flushToDatabase() {
           if (!item.timestamp) item.timestamp = new Date().toISOString();
           if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
 
+          const apiKeyRow = item.apiKey
+            ? db.get(`SELECT id FROM apiKeys WHERE key = ?`, [item.apiKey])
+            : null;
+          const apiKeyIdRow = !apiKeyRow && item.apiKeyId
+            ? db.get(`SELECT id FROM apiKeys WHERE id = ?`, [item.apiKeyId])
+            : null;
+
           const record = {
             id: item.id,
             provider: item.provider || null,
             model: item.model || null,
             connectionId: item.connectionId || null,
+            apiKeyId: apiKeyRow?.id || apiKeyIdRow?.id || null,
+            clientEndpoint: sanitizeUrl(item.clientEndpoint),
+            providerUrl: sanitizeUrl(item.providerUrl),
             timestamp: item.timestamp,
             status: item.status || null,
             latency: item.latency || {},
@@ -104,10 +134,11 @@ async function flushToDatabase() {
               ? { id: item.apiKeyIdentity.id || null, name: item.apiKeyIdentity.name || null }
               : null,
             limit: item.limit || null,
+            streamTrace: item.streamTrace ? truncateField(item.streamTrace, config.maxJsonSize) : null,
           };
 
           db.run(
-            `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
+            `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data WHERE requestDetails.status IS NULL OR requestDetails.status NOT IN ('error', 'cancelled') OR excluded.status IN ('error', 'cancelled')`,
             [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
           );
         }
@@ -121,11 +152,13 @@ async function flushToDatabase() {
         }
       });
     }
-  } catch (e) {
-    console.error("[requestDetailsRepo] Batch write failed:", e);
-  } finally {
-    isFlushing = false;
-  }
+    } catch (e) {
+      console.error("[requestDetailsRepo] Batch write failed:", e);
+    } finally {
+      activeFlushPromise = null;
+    }
+  })();
+  return activeFlushPromise;
 }
 
 export async function saveRequestDetail(detail) {
@@ -145,6 +178,11 @@ export async function saveRequestDetail(detail) {
       flushToDatabase().catch(() => {});
     }, config.flushIntervalMs);
   }
+}
+
+export async function flushRequestDetails() {
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+  await flushToDatabase();
 }
 
 export async function getRequestDetails(filter = {}) {
@@ -186,9 +224,35 @@ export async function getRequestDetailById(id) {
   return row ? parseJson(row.data, null) : null;
 }
 
+export async function* iterateRequestDetailJsonRows(batchSize = EXPORT_BATCH_SIZE) {
+  const db = await getAdapter();
+  const limit = Math.max(1, Math.min(Number(batchSize) || EXPORT_BATCH_SIZE, EXPORT_BATCH_SIZE));
+  let lastTimestamp = null;
+  let lastId = null;
+
+  while (true) {
+    const rows = lastTimestamp === null
+      ? db.all(
+        `SELECT id, timestamp, data FROM requestDetails ORDER BY timestamp ASC, id ASC LIMIT ?`,
+        [limit]
+      )
+      : db.all(
+        `SELECT id, timestamp, data FROM requestDetails WHERE timestamp > ? OR (timestamp = ? AND id > ?) ORDER BY timestamp ASC, id ASC LIMIT ?`,
+        [lastTimestamp, lastTimestamp, lastId, limit]
+      );
+
+    if (rows.length === 0) return;
+    for (const row of rows) yield row.data;
+    if (rows.length < limit) return;
+
+    const lastRow = rows[rows.length - 1];
+    lastTimestamp = lastRow.timestamp;
+    lastId = lastRow.id;
+  }
+}
+
 const _shutdownHandler = async () => {
-  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-  if (writeBuffer.length > 0) await flushToDatabase();
+  await flushRequestDetails();
 };
 
 function ensureShutdownHandler() {

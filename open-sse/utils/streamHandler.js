@@ -187,13 +187,19 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS) {
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, onStreamFailure = null) {
   let stallTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
   let lastChunkAt = Date.now();
   const t0 = Date.now();
   const tag = "STREAM";
+  let failureReported = false;
+  const reportFailure = (error, status = "error") => {
+    if (failureReported) return;
+    failureReported = true;
+    onStreamFailure?.(error, transformStream.getRequestDetailsTrace?.() || null, { status });
+  };
   const clearStall = () => {
     if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
   };
@@ -201,8 +207,10 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     clearStall();
     stallTimer = setTimeout(() => {
       stallTimer = null;
+      const error = new Error("stream stall timeout");
       dbg(tag, `STALL TIMEOUT ${stallTimeoutMs}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);
-      streamController.handleError?.(new Error("stream stall timeout"));
+      reportFailure(error);
+      streamController.handleError?.(error);
       streamController.abort?.();
     }, stallTimeoutMs);
   };
@@ -215,8 +223,13 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     startTime: streamController.startTime,
     isConnected: () => streamController.isConnected(),
     handleComplete: () => { dbg(tag, `complete | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleComplete(); },
-    handleError: (e) => { dbg(tag, `error: ${e?.message} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleError(e); },
-    handleDisconnect: (r) => { dbg(tag, `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleDisconnect(r); },
+    handleError: (e) => { dbg(tag, `error: ${e?.message} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); reportFailure(e); streamController.handleError(e); },
+    handleDisconnect: (r) => {
+      dbg(tag, `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`);
+      clearStall();
+      reportFailure(new Error("Downstream cancelled streaming response"), "cancelled");
+      streamController.handleDisconnect(r);
+    },
     abort: () => { clearStall(); streamController.abort(); }
   };
 
@@ -250,4 +263,3 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     onAbortTerminal
   );
 }
-

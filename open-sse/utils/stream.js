@@ -21,6 +21,45 @@ const STREAM_MODE = {
   TRANSLATE: "translate",    // Full translation between formats
   PASSTHROUGH: "passthrough" // No translation, normalize output, extract usage
 };
+const RAW_SSE_MAX_BYTES_PER_SIDE = 1024;
+
+function appendTraceBytes(trace, chunk) {
+  if (!chunk?.byteLength) return;
+  const incoming = chunk instanceof Uint8Array
+    ? chunk
+    : new Uint8Array(chunk.buffer || chunk, chunk.byteOffset || 0, chunk.byteLength);
+
+  if (incoming.byteLength >= RAW_SSE_MAX_BYTES_PER_SIDE) {
+    trace.truncated ||= trace.bytes.byteLength > 0 || incoming.byteLength > RAW_SSE_MAX_BYTES_PER_SIDE;
+    trace.bytes = incoming.slice(incoming.byteLength - RAW_SSE_MAX_BYTES_PER_SIDE);
+    return;
+  }
+
+  const previousLength = trace.bytes.byteLength;
+  const keptPreviousLength = Math.min(previousLength, RAW_SSE_MAX_BYTES_PER_SIDE - incoming.byteLength);
+  const combined = new Uint8Array(keptPreviousLength + incoming.byteLength);
+  combined.set(trace.bytes.subarray(previousLength - keptPreviousLength));
+  combined.set(incoming, keptPreviousLength);
+  if (previousLength + incoming.byteLength > RAW_SSE_MAX_BYTES_PER_SIDE) trace.truncated = true;
+  trace.bytes = combined;
+}
+
+function bytesToBase64(bytes) {
+  if (!bytes.byteLength) return "";
+  if (typeof Buffer !== "undefined") return Buffer.from(bytes).toString("base64");
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function buildStreamTraceMeta(providerTrace, clientTrace) {
+  return {
+    providerSseBase64: bytesToBase64(providerTrace.bytes),
+    clientSseBase64: bytesToBase64(clientTrace.bytes),
+    truncated: providerTrace.truncated || clientTrace.truncated,
+    maxBytesPerSide: RAW_SSE_MAX_BYTES_PER_SIDE,
+  };
+}
 
 /**
  * Create unified SSE transform stream
@@ -72,10 +111,18 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+  const providerTrace = { bytes: new Uint8Array(), truncated: false };
+  const clientTrace = { bytes: new Uint8Array(), truncated: false };
+  const emit = (controller, output) => {
+    const bytes = sharedEncoder.encode(output);
+    appendTraceBytes(clientTrace, bytes);
+    controller.enqueue(bytes);
+  };
 
-  return new TransformStream({
+  const stream = new TransformStream({
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
+      appendTraceBytes(providerTrace, chunk);
       const text = decoder.decode(chunk, { stream: true });
       buffer += text;
       reqLogger?.appendProviderChunk?.(text);
@@ -198,7 +245,7 @@ export function createSSEStream(options = {}) {
           }
 
           reqLogger?.appendConvertedChunk?.(output);
-          controller.enqueue(sharedEncoder.encode(output));
+          emit(controller, output);
           continue;
         }
 
@@ -226,7 +273,7 @@ export function createSSEStream(options = {}) {
           if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
             const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
             reqLogger?.appendConvertedChunk?.(failedOutput);
-            controller.enqueue(sharedEncoder.encode(failedOutput));
+            emit(controller, failedOutput);
             openAIResponsesTerminalSeen = true;
             sseEmittedCount++;
           }
@@ -234,7 +281,7 @@ export function createSSEStream(options = {}) {
           if (keepsOpenAIResponsesFormat && !streamDoneSent) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
-            controller.enqueue(sharedEncoder.encode(doneOutput));
+            emit(controller, doneOutput);
           }
           streamDoneSent = true;
           if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
@@ -286,7 +333,7 @@ export function createSSEStream(options = {}) {
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
           const output = formatSSE({ event: openAIResponsesEventName, data: parsed }, sourceFormat);
           reqLogger?.appendConvertedChunk?.(output);
-          controller.enqueue(sharedEncoder.encode(output));
+          emit(controller, output);
           currentOpenAIResponsesEvent = null;
           sseEmittedCount++;
           continue;
@@ -327,7 +374,7 @@ export function createSSEStream(options = {}) {
 
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+            emit(controller, output);
             sseEmittedCount++;
           }
         }
@@ -349,7 +396,7 @@ export function createSSEStream(options = {}) {
               output = "data: " + buffer.slice(5);
             }
             reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+            emit(controller, output);
           }
 
           if (!hasValidUsage(usage) && totalContentLength > 0) {
@@ -371,13 +418,14 @@ export function createSSEStream(options = {}) {
           if (!streamDoneSent && !isGeminiFamily) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
-            controller.enqueue(sharedEncoder.encode(doneOutput));
+            emit(controller, doneOutput);
           }
 
           if (onStreamComplete) {
             onStreamComplete({
               content: accumulatedContent,
-              thinking: accumulatedThinking
+              thinking: accumulatedThinking,
+              meta: buildStreamTraceMeta(providerTrace, clientTrace),
             }, usage, ttftAt);
           }
           return;
@@ -400,7 +448,7 @@ export function createSSEStream(options = {}) {
                 if (item === null || item === undefined) continue;
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
-                controller.enqueue(sharedEncoder.encode(output));
+                emit(controller, output);
               }
             }
           }
@@ -420,7 +468,7 @@ export function createSSEStream(options = {}) {
             if (item === null || item === undefined) continue;
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+            emit(controller, output);
           }
         }
 
@@ -429,14 +477,14 @@ export function createSSEStream(options = {}) {
         if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
           const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
           reqLogger?.appendConvertedChunk?.(failedOutput);
-          controller.enqueue(sharedEncoder.encode(failedOutput));
+          emit(controller, failedOutput);
           openAIResponsesTerminalSeen = true;
         }
 
         if (keepsOpenAIResponsesFormat && !openAIResponsesDoneSent && !streamDoneSent) {
           const doneOutput = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(doneOutput);
-          controller.enqueue(sharedEncoder.encode(doneOutput));
+          emit(controller, doneOutput);
           openAIResponsesDoneSent = true;
           streamDoneSent = true;
         }
@@ -454,14 +502,18 @@ export function createSSEStream(options = {}) {
         if (onStreamComplete) {
           onStreamComplete({
             content: accumulatedContent,
-            thinking: accumulatedThinking
+            thinking: accumulatedThinking,
+            meta: buildStreamTraceMeta(providerTrace, clientTrace),
           }, state?.usage, ttftAt);
         }
       } catch (error) {
         console.log("Error in flush:", error);
+        throw error;
       }
     }
   });
+  stream.getRequestDetailsTrace = () => buildStreamTraceMeta(providerTrace, clientTrace);
+  return stream;
 }
 
 export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {

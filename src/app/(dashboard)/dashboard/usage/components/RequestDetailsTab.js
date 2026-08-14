@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
 import Drawer from "@/shared/components/Drawer";
@@ -10,6 +10,7 @@ import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
 
 let providerNameCache = null;
 let providerNodesCache = null;
+let apiKeyNameCache = null;
 
 async function fetchProviderNames() {
   if (providerNameCache && providerNodesCache) {
@@ -31,6 +32,22 @@ async function fetchProviderNames() {
   };
 
   return { providerNameCache, providerNodesCache };
+}
+
+async function fetchApiKeyNames() {
+  if (apiKeyNameCache) return apiKeyNameCache;
+  const response = await fetch("/api/keys?namesOnly=1");
+  if (!response.ok) return {};
+  const data = await response.json();
+  apiKeyNameCache = {};
+  for (const k of data.keys || []) {
+    if (k.id) apiKeyNameCache[k.id] = k.name || "Unnamed key";
+  }
+  return apiKeyNameCache;
+}
+
+function getApiKeyName(apiKeyId, cache) {
+  return apiKeyId && cache ? cache[apiKeyId] || null : null;
 }
 
 function getProviderName(providerId, cache) {
@@ -110,8 +127,14 @@ export default function RequestDetailsTab() {
   const [loading, setLoading] = useState(false);
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [streamTrace, setStreamTrace] = useState(null);
+  const [streamTraceLoading, setStreamTraceLoading] = useState(false);
+  const [streamTraceError, setStreamTraceError] = useState("");
+  const streamTraceAbortRef = useRef(null);
+  const streamTraceGenerationRef = useRef(0);
   const [providers, setProviders] = useState([]);
   const [providerNameCache, setProviderNameCache] = useState(null);
+  const [keyNameMap, setKeyNameMap] = useState(null);
   const [filters, setFilters] = useState({
     provider: "",
     startDate: "",
@@ -126,6 +149,7 @@ export default function RequestDetailsTab() {
 
       const cache = await fetchProviderNames();
       setProviderNameCache(cache.providerNameCache);
+      setKeyNameMap(await fetchApiKeyNames());
     } catch (error) {
       console.error("Failed to fetch providers:", error);
     }
@@ -162,10 +186,51 @@ export default function RequestDetailsTab() {
     fetchDetails();
   }, [fetchDetails]);
 
+  const cancelStreamTraceFetch = useCallback(() => {
+    streamTraceGenerationRef.current += 1;
+    const controller = streamTraceAbortRef.current;
+    if (controller) controller.abort();
+    streamTraceAbortRef.current = null;
+  }, []);
+
+  useEffect(() => () => cancelStreamTraceFetch(), [cancelStreamTraceFetch]);
+
   const handleViewDetail = (detail) => {
+    cancelStreamTraceFetch();
     setSelectedDetail(detail);
+    setStreamTrace(null);
+    setStreamTraceLoading(false);
+    setStreamTraceError("");
     setIsDrawerOpen(true);
   };
+
+  const handleDecodeStream = useCallback(async () => {
+    if (!selectedDetail?.id) return;
+    cancelStreamTraceFetch();
+    const generation = streamTraceGenerationRef.current;
+    const controller = new AbortController();
+    streamTraceAbortRef.current = controller;
+    setStreamTraceLoading(true);
+    setStreamTraceError("");
+    try {
+      const response = await fetch(`/api/usage/request-details/${encodeURIComponent(selectedDetail.id)}/stream-trace`, {
+        signal: controller.signal,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to decode stream trace");
+      if (streamTraceGenerationRef.current !== generation) return;
+      setStreamTrace(data);
+    } catch (error) {
+      if (streamTraceGenerationRef.current === generation && error.name !== "AbortError") {
+        setStreamTraceError(error.message || "Failed to decode stream trace");
+      }
+    } finally {
+      if (streamTraceGenerationRef.current === generation) {
+        streamTraceAbortRef.current = null;
+        setStreamTraceLoading(false);
+      }
+    }
+  }, [cancelStreamTraceFetch, selectedDetail]);
 
   const handlePageChange = (newPage) => {
     setPagination(prev => ({ ...prev, page: newPage }));
@@ -266,7 +331,7 @@ export default function RequestDetailsTab() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-text-muted">
+                  <td colSpan="9" className="p-8 text-center text-text-muted">
                     <div className="flex items-center justify-center gap-2">
                       <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
                       Loading...
@@ -275,7 +340,7 @@ export default function RequestDetailsTab() {
                 </tr>
               ) : details.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-text-muted">
+                  <td colSpan="9" className="p-8 text-center text-text-muted">
                     No request details found
                   </td>
                 </tr>
@@ -294,6 +359,11 @@ export default function RequestDetailsTab() {
                         <span className="ml-2 rounded bg-red-500/10 px-1.5 py-0.5 font-sans text-[10px] font-medium text-red-500">
                           Combo limit
                         </span>
+                      )}
+                      {getApiKeyName(detail.apiKeyId, keyNameMap) && (
+                        <div className="truncate font-sans text-xs text-text-muted">
+                          {getApiKeyName(detail.apiKeyId, keyNameMap)}
+                        </div>
                       )}
                     </td>
                     <td className="max-w-[180px] truncate p-4 text-sm text-text-main">
@@ -350,7 +420,13 @@ export default function RequestDetailsTab() {
 
       <Drawer
         isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
+        onClose={() => {
+          cancelStreamTraceFetch();
+          setIsDrawerOpen(false);
+          setStreamTrace(null);
+          setStreamTraceLoading(false);
+          setStreamTraceError("");
+        }}
         title="Request Details"
         width="lg"
       >
@@ -396,8 +472,22 @@ export default function RequestDetailsTab() {
                  <span className="text-text-main font-medium">{getProviderName(selectedDetail.provider, providerNameCache)}</span>
                </div>
               <div>
+                <span className="text-text-muted">API Key:</span>{" "}
+                <span className="text-text-main font-medium">
+                  {getApiKeyName(selectedDetail.apiKeyId, keyNameMap) || "Unknown"}
+                </span>
+              </div>
+              <div>
                 <span className="text-text-muted">Model:</span>{" "}
                 <span className="text-text-main font-mono">{selectedDetail.model}</span>
+              </div>
+              <div className="sm:col-span-2">
+                <span className="text-text-muted">Client Endpoint:</span>{" "}
+                <span className="break-all font-mono text-text-main">{selectedDetail.clientEndpoint || "Unknown"}</span>
+              </div>
+              <div className="sm:col-span-2">
+                <span className="text-text-muted">Upstream URL:</span>{" "}
+                <span className="break-all font-mono text-text-main">{selectedDetail.providerUrl || "Unknown"}</span>
               </div>
               <div>
                 <span className="text-text-muted">Status:</span>{" "}
@@ -490,6 +580,72 @@ export default function RequestDetailsTab() {
                   {selectedDetail.response?.content || "[No content]"}
                 </pre>
               </CollapsibleSection>
+
+              {(selectedDetail.streamTrace || selectedDetail.response?.meta?.raw_sse_b64) && (
+                <CollapsibleSection title="5. Stream Trace" icon="network_node">
+                  <div className="space-y-4">
+                    {!streamTrace && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleDecodeStream}
+                        disabled={streamTraceLoading}
+                      >
+                        {streamTraceLoading ? "Decoding..." : "Decode Stream"}
+                      </Button>
+                    )}
+                    {streamTraceError && <p className="text-sm text-red-600">{streamTraceError}</p>}
+                    {streamTrace && (
+                      <>
+                        <div className="grid grid-cols-3 gap-3 text-sm">
+                          <div className="rounded-lg border border-black/5 p-3 dark:border-white/5">
+                            <div className="text-xs text-text-muted">Events</div>
+                            <div className="font-mono text-text-main">{streamTrace.events?.length || 0}</div>
+                          </div>
+                          <div className="rounded-lg border border-black/5 p-3 dark:border-white/5">
+                            <div className="text-xs text-text-muted">Tools</div>
+                            <div className="font-mono text-text-main">{streamTrace.tools?.length || 0}</div>
+                          </div>
+                          <div className="rounded-lg border border-black/5 p-3 dark:border-white/5">
+                            <div className="text-xs text-text-muted">Errors</div>
+                            <div className="font-mono text-text-main">{streamTrace.errors?.length || 0}</div>
+                          </div>
+                        </div>
+                        {streamTrace.truncated && (
+                          <p className="text-xs text-amber-700 dark:text-amber-300">
+                            Trace storage was truncated to {streamTrace.maxBytesPerSide || "the configured limit"} bytes per side.
+                          </p>
+                        )}
+                        <div className="max-h-[300px] space-y-2 overflow-auto">
+                          {streamTrace.events?.map((event) => (
+                            <div key={`${event.source}-${event.index}`} className="rounded-lg border border-black/5 p-3 dark:border-white/5">
+                              <div className="flex justify-between gap-3 font-mono text-xs text-text-main">
+                                <span>{event.source}: {event.event}</span>
+                                <span className="text-text-muted">#{event.index + 1}</span>
+                              </div>
+                              <div className="mt-1 break-words text-sm text-text-muted">{event.summary}</div>
+                            </div>
+                          ))}
+                        </div>
+                        {streamTrace.rawProviderSse && (
+                          <CollapsibleSection title="Raw Provider SSE" icon="data_object">
+                            <pre className="max-h-[300px] overflow-auto whitespace-pre-wrap break-all rounded-lg bg-black/5 p-3 font-mono text-xs text-text-main dark:bg-white/5">
+                              {streamTrace.rawProviderSse}
+                            </pre>
+                          </CollapsibleSection>
+                        )}
+                        {streamTrace.rawClientSse && (
+                          <CollapsibleSection title="Raw Client SSE" icon="data_object">
+                            <pre className="max-h-[300px] overflow-auto whitespace-pre-wrap break-all rounded-lg bg-black/5 p-3 font-mono text-xs text-text-main dark:bg-white/5">
+                              {streamTrace.rawClientSse}
+                            </pre>
+                          </CollapsibleSection>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </CollapsibleSection>
+              )}
             </div>
           </div>
         )}
