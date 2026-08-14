@@ -74,7 +74,7 @@ export function buildRequestDetail(base, overrides = {}) {
   };
 }
 
-export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE" }) {
+export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, usageMeta, label = "USAGE" }) {
   if (!tokens || typeof tokens !== "object") return;
 
   const inTokens = tokens.input_tokens ?? tokens.prompt_tokens ?? 0;
@@ -97,9 +97,12 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     provider: provider || "unknown",
     model: model || "unknown",
     tokens: normalized,
-    timestamp: new Date().toISOString(),
+    ...(usageMeta?.startedAt ? { startedAt: usageMeta.startedAt } : {}),
+    timestamp: usageMeta?.startedAt || new Date().toISOString(),
     connectionId: connectionId || undefined,
     apiKey: apiKey || undefined,
-    endpoint: endpoint || null
+    endpoint: endpoint || null,
+    ...(usageMeta?.requestedModel ? { requestedModel: usageMeta.requestedModel } : {}),
+    ...(usageMeta && Object.hasOwn(usageMeta, "metered") ? { metered: usageMeta.metered } : {}),
   }).catch(() => {});
 }

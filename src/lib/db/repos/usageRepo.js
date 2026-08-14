@@ -249,6 +249,10 @@ export async function saveRequestUsage(entry) {
     const tokens = entry.tokens || {};
     const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
     const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
+    const meta = {};
+    if (entry.requestedModel) meta.requestedModel = entry.requestedModel;
+    if (entry.metered !== undefined) meta.metered = entry.metered;
+    if (entry.startedAt) meta.startedAt = entry.startedAt;
 
     let inserted = false;
 
@@ -285,7 +289,7 @@ export async function saveRequestUsage(entry) {
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
+          stringifyJson(tokens), stringifyJson(meta),
         ]
       );
 
@@ -307,11 +311,71 @@ export async function saveRequestUsage(entry) {
 
     if (inserted) {
       pushToRing(entry);
+      statsEmitter.emit("usage", entry);
       scheduleStatsEvent("update", 250);
     }
   } catch (e) {
     console.error("Failed to save usage stats:", e);
   }
+}
+
+export async function getUsageByApiKey(apiKey, since, options = {}) {
+  const db = await getAdapter();
+  const conditions = ["apiKey = ?"];
+  const params = [apiKey];
+
+  if (since) {
+    conditions.push("timestamp >= ?");
+    params.push(since instanceof Date ? since.toISOString() : new Date(since).toISOString());
+  }
+
+  const rows = db.all(
+    `SELECT promptTokens, completionTokens, tokens, meta FROM usageHistory WHERE ${conditions.join(" AND ")}`,
+    params,
+  );
+
+  return rows.reduce((total, row) => {
+    const meta = parseJson(row.meta, {}) || {};
+    if (options.meteredOnly && meta.metered === false) return total;
+    const tokens = parseJson(row.tokens, {}) || {};
+    const promptTokens = row.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0;
+    const completionTokens = row.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0;
+    return total + promptTokens + completionTokens;
+  }, 0);
+}
+
+export async function rebuildUsageDaily() {
+  const db = await getAdapter();
+  const rows = db.all(
+    `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, tokens FROM usageHistory ORDER BY id ASC`,
+  );
+  const days = new Map();
+
+  for (const row of rows) {
+    const dateKey = getLocalDateKey(row.timestamp);
+    if (!days.has(dateKey)) {
+      days.set(dateKey, {
+        requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0,
+        byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
+      });
+    }
+    aggregateEntryToDay(days.get(dateKey), {
+      ...row,
+      tokens: parseJson(row.tokens, {}) || {},
+    });
+  }
+
+  db.transaction(() => {
+    db.run(`DELETE FROM usageDaily`);
+    for (const [dateKey, day] of days) {
+      db.run(`INSERT INTO usageDaily(dateKey, data) VALUES(?, ?)`, [dateKey, stringifyJson(day)]);
+    }
+  });
+}
+
+export function resetUsageCaches() {
+  recentRing.items = [];
+  recentRing.initialized = false;
 }
 
 export async function getUsageHistory(filter = {}) {

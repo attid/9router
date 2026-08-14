@@ -142,15 +142,15 @@ function importLegacyMain(adapter, data) {
 
   importWithAssertion(adapter, "apiKeys", data.apiKeys || [], (k) => {
     adapter.run(
-      `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, allowedModels, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
-      [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, Array.isArray(k.allowedModels) && k.allowedModels.length > 0 ? stringifyJson(k.allowedModels) : null, k.createdAt || new Date().toISOString()]
+      `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, limits, isActive, allowedModels, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+      [k.id, k.key, k.name || null, k.machineId || null, stringifyJson(k.limits || null), k.isActive === false ? 0 : 1, Array.isArray(k.allowedModels) && k.allowedModels.length > 0 ? stringifyJson(k.allowedModels) : null, k.createdAt || new Date().toISOString()]
     );
   }, (k) => ({ id: k.id ?? null, name: k.name ?? null }));
 
   importWithAssertion(adapter, "combos", data.combos || [], (c) => {
     adapter.run(
-      `INSERT OR REPLACE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
-      [c.id, c.name, c.kind || null, stringifyJson(c.models || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
+      `INSERT OR REPLACE INTO combos(id, name, kind, models, isFree, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+      [c.id, c.name, c.kind || null, stringifyJson(c.models || []), c.isFree === true ? 1 : 0, c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
     );
   }, (c) => ({ id: c.id ?? null, name: c.name ?? null }));
 
@@ -173,6 +173,9 @@ function importLegacyUsage(adapter, data) {
   if (!data || typeof data !== "object") return;
   for (const e of data.history || []) {
     const t = e.tokens || {};
+    const meta = {};
+    if (e.requestedModel) meta.requestedModel = e.requestedModel;
+    if (e.metered !== undefined) meta.metered = e.metered;
     adapter.run(
       `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -183,7 +186,7 @@ function importLegacyUsage(adapter, data) {
         e.cost || 0,
         e.status || "ok",
         stringifyJson(t),
-        stringifyJson({}),
+        stringifyJson(meta),
       ]
     );
   }

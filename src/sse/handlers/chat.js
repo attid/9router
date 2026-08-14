@@ -8,7 +8,7 @@ import {
   authorizeModelRequest,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getSettings } from "@/lib/localDb";
+import { getComboByName, getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -20,6 +20,29 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { checkKeyLimits } from "../services/keyLimits.js";
+
+function withFreeComboUsage(clientRawRequest, combo) {
+  if (combo?.isFree !== true || clientRawRequest?.usageMeta?.metered === false) return clientRawRequest;
+  return {
+    ...clientRawRequest,
+    usageMeta: Object.freeze({
+      ...clientRawRequest?.usageMeta,
+      requestedModel: combo.name,
+      metered: false,
+    }),
+  };
+}
+
+function withUsageStartedAt(clientRawRequest, startedAt) {
+  return {
+    ...clientRawRequest,
+    usageMeta: Object.freeze({
+      ...clientRawRequest?.usageMeta,
+      startedAt,
+    }),
+  };
+}
 
 /**
  * Handle chat completion request
@@ -27,6 +50,7 @@ import { getProjectIdForConnection } from "open-sse/services/projectId.js";
  * Format detection and translation handled by translator
  */
 export async function handleChat(request, clientRawRequest = null) {
+  const startedAt = clientRawRequest?.usageMeta?.startedAt || new Date().toISOString();
   let body;
   try {
     body = await request.json();
@@ -44,6 +68,7 @@ export async function handleChat(request, clientRawRequest = null) {
       headers: Object.fromEntries(request.headers.entries())
     };
   }
+  clientRawRequest = withUsageStartedAt(clientRawRequest, startedAt);
   cacheClaudeHeaders(clientRawRequest.headers);
 
   // Log request endpoint and model
@@ -75,6 +100,27 @@ export async function handleChat(request, clientRawRequest = null) {
   const authorization = await authorizeModelRequest(request, { model: modelStr, settings });
   if (authorization.response) return authorization.response;
 
+  const requestedCombo = await getComboByName(modelStr);
+  if (authorization.apiKey && requestedCombo?.isFree !== true) {
+    const limitCheck = await checkKeyLimits(authorization.apiKey);
+    if (!limitCheck.allowed) {
+      log.warn("AUTH", `Token limit exceeded for key ${log.maskKey(authorization.apiKey)}`);
+      return new Response(JSON.stringify({
+        error: {
+          message: limitCheck.error,
+          type: "rate_limit_error",
+          code: "token_limit_exceeded",
+        },
+      }), {
+        status: HTTP_STATUS.RATE_LIMITED,
+        headers: {
+          "Content-Type": "application/json",
+          ...(limitCheck.retryAfter ? { "Retry-After": String(limitCheck.retryAfter) } : {}),
+        },
+      });
+    }
+  }
+
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
   const userAgent = request?.headers?.get("user-agent") || "";
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
@@ -83,6 +129,7 @@ export async function handleChat(request, clientRawRequest = null) {
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
+    const comboClientRawRequest = withFreeComboUsage(clientRawRequest, requestedCombo);
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
@@ -94,10 +141,10 @@ export async function handleChat(request, clientRawRequest = null) {
         body,
         models: comboModels,
         handleSingleModel: (b, m, isPanel) => {
-          let cleanRawReq = clientRawRequest;
-          if (isPanel && clientRawRequest) {
-            const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
-            cleanRawReq = { ...clientRawRequest, body: cleanBody };
+          let cleanRawReq = comboClientRawRequest;
+          if (isPanel && comboClientRawRequest) {
+            const { tools, tool_choice, ...cleanBody } = comboClientRawRequest.body || {};
+            cleanRawReq = { ...comboClientRawRequest, body: cleanBody };
           }
           return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
         },
@@ -113,7 +160,7 @@ export async function handleChat(request, clientRawRequest = null) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, comboClientRawRequest, request, apiKey),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -136,6 +183,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const comboModels = await getComboModels(modelStr);
     if (comboModels) {
       const chatSettings = await getSettings();
+      const combo = await getComboByName(modelStr);
+      const comboClientRawRequest = withFreeComboUsage(clientRawRequest, combo);
       // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
       const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
@@ -147,10 +196,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           body,
           models: comboModels,
           handleSingleModel: (b, m, isPanel) => {
-            let cleanRawReq = clientRawRequest;
-            if (isPanel && clientRawRequest) {
-              const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
-              cleanRawReq = { ...clientRawRequest, body: cleanBody };
+            let cleanRawReq = comboClientRawRequest;
+            if (isPanel && comboClientRawRequest) {
+              const { tools, tool_choice, ...cleanBody } = comboClientRawRequest.body || {};
+              cleanRawReq = { ...comboClientRawRequest, body: cleanBody };
             }
             return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
           },
@@ -166,7 +215,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       return handleComboChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, comboClientRawRequest, request, apiKey),
         log,
         comboName: modelStr,
         comboStrategy,

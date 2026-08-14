@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
 import { normalizeAllowedModels } from "@/lib/apiKeys/allowedModels";
+import { normalizeTokenLimits } from "@/shared/utils/tokenLimits.js";
 
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
@@ -37,6 +38,13 @@ export async function PUT(request, { params }) {
         return NextResponse.json({ error: normalized.error }, { status: 400 });
       }
       updateData.allowedModels = normalized.value;
+    }
+    if (Object.hasOwn(body, "limits")) {
+      try {
+        updateData.limits = normalizeTokenLimits(body.limits, { partial: true });
+      } catch (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
     }
 
     const updated = await updateApiKey(id, updateData);

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getApiKeys, createApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { normalizeAllowedModels } from "@/lib/apiKeys/allowedModels";
+import { normalizeTokenLimits } from "@/shared/utils/tokenLimits.js";
 
 export const dynamic = "force-dynamic";
 
@@ -31,9 +32,19 @@ export async function POST(request) {
       return NextResponse.json({ error: normalized.error }, { status: 400 });
     }
 
+    let limits;
+    try {
+      limits = normalizeTokenLimits(body.limits);
+    } catch (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     // Always get machineId from server
     const machineId = await getConsistentMachineId();
-    const apiKey = await createApiKey(name, machineId, { allowedModels: normalized.value });
+    const createOptions = Object.hasOwn(body, "allowedModels")
+      ? { allowedModels: normalized.value, ...(limits ? { limits } : {}) }
+      : limits;
+    const apiKey = await createApiKey(name, machineId, createOptions);
 
     return NextResponse.json({
       key: apiKey.key,
@@ -41,6 +52,7 @@ export async function POST(request) {
       id: apiKey.id,
       machineId: apiKey.machineId,
       allowedModels: apiKey.allowedModels ?? null,
+      limits: apiKey.limits,
     }, { status: 201 });
   } catch (error) {
     console.log("Error creating key:", error);

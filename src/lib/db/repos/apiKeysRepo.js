@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { invalidateKeyLimitCounters } from "@/shared/utils/keyLimitCounters.js";
 
 function normalizeAllowedModels(value) {
   return Array.isArray(value) && value.length > 0 ? value : null;
@@ -17,6 +18,7 @@ function rowToKey(row) {
     key: row.key,
     name: row.name,
     machineId: row.machineId,
+    limits: parseJson(row.limits, null),
     isActive: row.isActive === 1 || row.isActive === true,
     allowedModels: parseJson(row.allowedModels, null),
     createdAt: row.createdAt,
@@ -35,9 +37,29 @@ export async function getApiKeyById(id) {
   return rowToKey(row);
 }
 
-export async function createApiKey(name, machineId, options = {}) {
+function normalizeLimitValue(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null;
+}
+
+function normalizeLimits(limits, existing = {}) {
+  if (!limits) return null;
+  return {
+    hourly: Object.hasOwn(limits, "hourly") ? normalizeLimitValue(limits.hourly) : existing.hourly ?? null,
+    daily: Object.hasOwn(limits, "daily") ? normalizeLimitValue(limits.daily) : existing.daily ?? null,
+    weekly: Object.hasOwn(limits, "weekly") ? normalizeLimitValue(limits.weekly) : existing.weekly ?? null,
+  };
+}
+
+export async function createApiKey(name, machineId, optionsOrLimits = {}) {
   if (!machineId) throw new Error("machineId is required");
+  const usesOptionsObject = optionsOrLimits !== null
+    && typeof optionsOrLimits === "object"
+    && (Object.hasOwn(optionsOrLimits, "allowedModels") || Object.hasOwn(optionsOrLimits, "limits"));
+  const options = usesOptionsObject ? optionsOrLimits : {};
   const { allowedModels = null } = options;
+  const limits = usesOptionsObject ? options.limits ?? null : optionsOrLimits;
   const db = await getAdapter();
   const { generateApiKeyWithMachine } = await import("@/shared/utils/apiKey");
   const result = generateApiKeyWithMachine(machineId);
@@ -46,13 +68,14 @@ export async function createApiKey(name, machineId, options = {}) {
     name,
     key: result.key,
     machineId,
+    limits: normalizeLimits(limits),
     isActive: true,
     allowedModels: normalizeAllowedModels(allowedModels),
     createdAt: new Date().toISOString(),
   };
   db.run(
-    `INSERT INTO apiKeys(id, key, name, machineId, isActive, allowedModels, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
-    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, serializeAllowedModels(apiKey.allowedModels), apiKey.createdAt]
+    `INSERT INTO apiKeys(id, key, name, machineId, limits, isActive, allowedModels, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, stringifyJson(apiKey.limits), 1, serializeAllowedModels(apiKey.allowedModels), apiKey.createdAt]
   );
   return apiKey;
 }
@@ -63,14 +86,25 @@ export async function updateApiKey(id, data) {
   db.transaction(() => {
     const row = db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
     if (!row) return;
-    const merged = { ...rowToKey(row), ...data };
+    const current = rowToKey(row);
+    const merged = {
+      ...current,
+      ...data,
+      limits: Object.hasOwn(data, "limits")
+        ? normalizeLimits(data.limits, current.limits || {})
+        : current.limits,
+    };
     if (data.allowedModels !== undefined) {
       merged.allowedModels = normalizeAllowedModels(data.allowedModels);
     }
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, allowedModels = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, serializeAllowedModels(merged.allowedModels), id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, limits = ?, isActive = ?, allowedModels = ? WHERE id = ?`,
+      [merged.key, merged.name, merged.machineId, stringifyJson(merged.limits), merged.isActive ? 1 : 0, serializeAllowedModels(merged.allowedModels), id]
     );
+    if (Object.hasOwn(data, "limits") || merged.key !== current.key) {
+      invalidateKeyLimitCounters(current.key);
+      if (merged.key !== current.key) invalidateKeyLimitCounters(merged.key);
+    }
     result = merged;
   });
   return result;
@@ -78,7 +112,9 @@ export async function updateApiKey(id, data) {
 
 export async function deleteApiKey(id) {
   const db = await getAdapter();
+  const row = db.get(`SELECT key FROM apiKeys WHERE id = ?`, [id]);
   const res = db.run(`DELETE FROM apiKeys WHERE id = ?`, [id]);
+  if ((res?.changes ?? 0) > 0 && row?.key) invalidateKeyLimitCounters(row.key);
   return (res?.changes ?? 0) > 0;
 }
 
