@@ -255,6 +255,63 @@ describe("Gemini native v1beta endpoint", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+  it("forwards non-audio requests in native Gemini format", async () => {
+    const body = {
+      contents: [{ role: "user", parts: [{ text: "read a file" }] }],
+      tools: [{
+        functionDeclarations: [{
+          name: "read_file",
+          parametersJsonSchema: { type: "object" },
+        }],
+      }],
+    };
+
+    await POST(makeGeminiRequest("gpt-4o:streamGenerateContent", body), {
+      params: Promise.resolve({ path: ["gpt-4o:streamGenerateContent"] }),
+    });
+
+    const forwardedRequest = mocks.handleChat.mock.calls[0][0];
+    expect(await forwardedRequest.json()).toEqual({ ...body, model: "gpt-4o" });
+  });
+
+  it("aggregates Gemini SSE for generateContent", async () => {
+    mocks.handleChat.mockResolvedValueOnce(new Response([
+      'data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"id":"call_1","name":"read_file","args":{"path":"/tmp/x"}}}]},"index":0}]}',
+      'data: {"candidates":[{"content":{"role":"model","parts":[{"text":""}]},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":1,"totalTokenCount":3}}',
+    ].join("\n\n"), {
+      headers: { "Content-Type": "text/event-stream" },
+    }));
+
+    const response = await POST(makeGeminiRequest("gpt-4o:generateContent", {
+      contents: [{ role: "user", parts: [{ text: "read a file" }] }],
+    }), {
+      params: Promise.resolve({ path: ["gpt-4o:generateContent"] }),
+    });
+
+    expect(await response.json()).toEqual({
+      candidates: [{
+        content: {
+          role: "model",
+          parts: [{
+            functionCall: {
+              id: "call_1",
+              name: "read_file",
+              args: { path: "/tmp/x" },
+            },
+          }],
+        },
+        finishReason: "STOP",
+        index: 0,
+      }],
+      usageMetadata: {
+        promptTokenCount: 2,
+        candidatesTokenCount: 1,
+        totalTokenCount: 3,
+      },
+      modelVersion: "gpt-4o",
+    });
+  });
+
   it("does not hijack provider-prefixed non-Gemini audio requests", async () => {
     await POST(makeGeminiRequest("openai/gpt-4o-mini-tts:generateContent", audioBody()), {
       params: Promise.resolve({ path: ["openai", "gpt-4o-mini-tts:generateContent"] }),
