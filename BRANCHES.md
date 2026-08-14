@@ -16,6 +16,7 @@ This file lives on `local/meta` and is merged into `deploy`. Do not put it on
 |---|---|---|
 | `feat/api-key-model-restrictions` | feature | Per-key model allowlists enforced across model-bearing endpoints. |
 | `feat/api-key-token-limits` | feature | Calendar token limits and free-combo metering; reports include free usage while limits exclude it. |
+| `feat/combo-token-limits` | feature | Optional per-combo hourly, daily, and weekly token limits applied independently to each API key; stacked on `feat/api-key-token-limits`. |
 | `feat/api-key-management` | feature | API key rename, deterministic sorting, and filtering. |
 | `feat/combo-weighted-balancing` | feature | Weighted combo members with fallback-only weight zero. |
 | `feat/gemini-native-output` | feature | Native Gemini request/response translation with tool calling while preserving upstream TTS handling. |
@@ -52,6 +53,7 @@ to that owning branch.
 git switch -C rebuild/deploy-v0.5.20 master
 git merge --no-ff feat/api-key-model-restrictions
 git merge --no-ff feat/api-key-token-limits
+git merge --no-ff feat/combo-token-limits
 git merge --no-ff feat/api-key-management
 git merge --no-ff feat/combo-weighted-balancing
 git merge --no-ff feat/gemini-native-output
