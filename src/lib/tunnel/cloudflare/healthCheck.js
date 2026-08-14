@@ -1,5 +1,6 @@
 import { resolveDns } from "../shared/dnsResolver.js";
 import { HEALTH_CHECK } from "./config.js";
+import { appUrl } from "../../../shared/utils/basePath.mjs";
 
 export async function probeUrlAlive(url) {
   if (!url) return false;
@@ -9,7 +10,7 @@ export async function probeUrlAlive(url) {
   if (!await resolveDns(hostname, HEALTH_CHECK.dnsTimeoutMs)) return false;
 
   try {
-    const res = await fetch(`${url}/api/health`, {
+    const res = await fetch(appUrl("/api/health", url), {
       signal: AbortSignal.timeout(HEALTH_CHECK.fetchTimeoutMs),
     });
     return res.ok;

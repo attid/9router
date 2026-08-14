@@ -1,3 +1,4 @@
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { Inter } from "next/font/google";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import "material-symbols/outlined.css";
@@ -20,7 +21,7 @@ export const metadata = {
   title: "9Router - AI Infrastructure Management",
   description: "One endpoint for all your AI providers. Manage keys, monitor usage, and scale effortlessly.",
   icons: {
-    icon: "/favicon.svg",
+    icon: withBasePath("/favicon.svg"),
   },
 };
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath, appUrl, joinUrlPath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect } from "react";
 import { Card } from "@/shared/components";
 import { getProviderAlias, isCustomEmbeddingProvider } from "@/shared/constants/providers";
@@ -37,14 +38,14 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
   const { copied: copiedRes, copy: copyRes } = useCopyToClipboard();
 
   useEffect(() => {
-    setLocalEndpoint(window.location.origin);
-    fetch("/api/keys")
+    setLocalEndpoint(appUrl("", window.location.origin));
+    fetch(withBasePath("/api/keys"))
       .then((r) => r.json())
       .then((d) => { setApiKey((d.keys || []).find((k) => k.isActive !== false)?.key || ""); })
       .catch(() => {});
-    fetch("/api/tunnel/status")
+    fetch(withBasePath("/api/tunnel/status"))
       .then((r) => r.json())
-      .then((d) => { if (d.publicUrl) setTunnelEndpoint(d.publicUrl); })
+      .then((d) => { if (d.publicUrl) setTunnelEndpoint(appUrl("", d.publicUrl)); })
       .catch(() => {});
   }, []);
 
@@ -59,7 +60,7 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
     return body;
   };
 
-  const curlSnippet = `curl -X POST ${endpoint}/v1/embeddings \\
+  const curlSnippet = `curl -X POST ${joinUrlPath(endpoint, "/v1/embeddings")} \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${apiKey || "YOUR_KEY"}" \\
   -d '${JSON.stringify(buildBody())}'`;
@@ -73,7 +74,7 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
     try {
       const headers = { "Content-Type": "application/json" };
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-      const res = await fetch("/api/v1/embeddings", {
+      const res = await fetch(withBasePath("/api/v1/embeddings"), {
         method: "POST",
         headers,
         body: JSON.stringify(buildBody()),

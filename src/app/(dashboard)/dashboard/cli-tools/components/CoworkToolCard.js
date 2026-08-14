@@ -1,18 +1,19 @@
 "use client";
 
+import { apiPath as withBasePath, joinUrlPath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect } from "react";
 import { Card, Button, ManualConfigModal, ComboFormModal, McpMarketplaceModal, ModelSelectModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
 
-const ENDPOINT = "/api/cli-tools/cowork-settings";
+const ENDPOINT = withBasePath("/api/cli-tools/cowork-settings");
 
 const stripV1 = (url) => (url || "").replace(/\/v1\/?$/, "");
 const ensureV1 = (url) => {
   const trimmed = (url || "").replace(/\/+$/, "");
   if (!trimmed) return "";
-  return /\/v1$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
+  return /\/v1$/.test(trimmed) ? trimmed : joinUrlPath(trimmed, "/v1");
 };
 
 export default function CoworkToolCard({
@@ -66,7 +67,7 @@ export default function CoworkToolCard({
 
   useEffect(() => {
     if (!isExpanded) return;
-    fetch("/api/models/alias")
+    fetch(withBasePath("/api/models/alias"))
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data) setModelAliases(data.aliases || {});
@@ -98,7 +99,7 @@ export default function CoworkToolCard({
   const checkStatus = async () => {
     setChecking(true);
     try {
-      const res = await fetch(ENDPOINT);
+      const res = await fetch(withBasePath(ENDPOINT));
       const data = await res.json();
       setStatus(data);
     } catch (error) {
@@ -134,7 +135,7 @@ export default function CoworkToolCard({
         || (apiKeys?.length > 0 ? apiKeys[0].key : null)
         || (!cloudEnabled ? "sk_9router" : null);
 
-      const res = await fetch(ENDPOINT, {
+      const res = await fetch(withBasePath(ENDPOINT), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -162,7 +163,7 @@ export default function CoworkToolCard({
 
   const handleCreateCombo = async ({ name, models }) => {
     try {
-      const res = await fetch("/api/combos", {
+      const res = await fetch(withBasePath("/api/combos"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, models }),
@@ -197,7 +198,7 @@ export default function CoworkToolCard({
     setRestoring(true);
     setMessage(null);
     try {
-      const res = await fetch(ENDPOINT, { method: "DELETE" });
+      const res = await fetch(withBasePath(ENDPOINT), { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully" });

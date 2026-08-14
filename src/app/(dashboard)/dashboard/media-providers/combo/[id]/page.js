@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useParams, notFound, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -66,12 +67,12 @@ export default function ComboDetailPage() {
   const fetchAll = async () => {
     try {
       const [comboRes, settingsRes, logsRes, keysRes, connsRes, aliasesRes] = await Promise.all([
-        fetch(`/api/combos/${id}`, { cache: "no-store" }),
-        fetch("/api/settings", { cache: "no-store" }),
-        fetch("/api/usage/logs", { cache: "no-store" }),
-        fetch("/api/keys", { cache: "no-store" }),
-        fetch("/api/providers", { cache: "no-store" }),
-        fetch("/api/models/alias", { cache: "no-store" }),
+        fetch(withBasePath(`/api/combos/${id}`), { cache: "no-store" }),
+        fetch(withBasePath("/api/settings"), { cache: "no-store" }),
+        fetch(withBasePath("/api/usage/logs"), { cache: "no-store" }),
+        fetch(withBasePath("/api/keys"), { cache: "no-store" }),
+        fetch(withBasePath("/api/providers"), { cache: "no-store" }),
+        fetch(withBasePath("/api/models/alias"), { cache: "no-store" }),
       ]);
       if (aliasesRes.ok) setModelAliases((await aliasesRes.json()).aliases || {});
       if (keysRes.ok) {
@@ -103,7 +104,7 @@ export default function ComboDetailPage() {
   };
 
   const saveCombo = async (patch) => {
-    const res = await fetch(`/api/combos/${id}`, {
+    const res = await fetch(withBasePath(`/api/combos/${id}`), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
@@ -159,12 +160,12 @@ export default function ComboDetailPage() {
 
   const handleToggleRoundRobin = async (enabled) => {
     setRoundRobin(enabled);
-    const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+    const settingsRes = await fetch(withBasePath("/api/settings"), { cache: "no-store" });
     const s = settingsRes.ok ? await settingsRes.json() : {};
     const updated = { ...(s.comboStrategies || {}) };
     if (enabled) updated[combo.name] = { fallbackStrategy: "round-robin" };
     else delete updated[combo.name];
-    await fetch("/api/settings", {
+    await fetch(withBasePath("/api/settings"), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ comboStrategies: updated }),
@@ -173,7 +174,7 @@ export default function ComboDetailPage() {
 
   const handleDelete = async () => {
     if (!confirm(`Delete combo "${combo.name}"?`)) return;
-    const res = await fetch(`/api/combos/${id}`, { method: "DELETE" });
+    const res = await fetch(withBasePath(`/api/combos/${id}`), { method: "DELETE" });
     if (res.ok) router.push(getListingHref(combo.kind));
   };
 
@@ -189,7 +190,7 @@ export default function ComboDetailPage() {
       const body = EXAMPLE_BODIES[combo.kind](combo.name);
       const headers = { "Content-Type": "application/json" };
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-      const res = await fetch(`/api${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+      const res = await fetch(withBasePath(`/api${path}`), { method: "POST", headers, body: JSON.stringify(body) });
       const latencyMs = Date.now() - start;
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -308,7 +309,7 @@ export default function ComboDetailPage() {
                 <div key={`${entry.model}-${idx}`} className="flex items-center gap-3 p-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02]">
                   <span className="text-xs text-text-muted w-5 text-center">{idx + 1}</span>
                   <ProviderIcon
-                    src={`/providers/${providerId}.png`}
+                    src={withBasePath(`/providers/${providerId}.png`)}
                     alt={p?.name || providerId}
                     size={24}
                     className="object-contain rounded shrink-0"

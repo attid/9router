@@ -2,6 +2,8 @@
  * API utility functions for making HTTP requests
  */
 
+import { apiPath } from "./basePath.mjs";
+
 const DEFAULT_HEADERS = {
   "Content-Type": "application/json",
 };
@@ -13,7 +15,7 @@ const DEFAULT_HEADERS = {
  * @returns {Promise<object>}
  */
 export async function get(url, options = {}) {
-  const response = await fetch(url, {
+  const response = await fetch(apiPath(url), {
     method: "GET",
     headers: { ...DEFAULT_HEADERS, ...options.headers },
     ...options,
@@ -29,7 +31,7 @@ export async function get(url, options = {}) {
  * @returns {Promise<object>}
  */
 export async function post(url, data, options = {}) {
-  const response = await fetch(url, {
+  const response = await fetch(apiPath(url), {
     method: "POST",
     headers: { ...DEFAULT_HEADERS, ...options.headers },
     body: JSON.stringify(data),
@@ -46,7 +48,7 @@ export async function post(url, data, options = {}) {
  * @returns {Promise<object>}
  */
 export async function put(url, data, options = {}) {
-  const response = await fetch(url, {
+  const response = await fetch(apiPath(url), {
     method: "PUT",
     headers: { ...DEFAULT_HEADERS, ...options.headers },
     body: JSON.stringify(data),
@@ -62,7 +64,7 @@ export async function put(url, data, options = {}) {
  * @returns {Promise<object>}
  */
 export async function del(url, options = {}) {
-  const response = await fetch(url, {
+  const response = await fetch(apiPath(url), {
     method: "DELETE",
     headers: { ...DEFAULT_HEADERS, ...options.headers },
     ...options,
@@ -90,4 +92,3 @@ async function handleResponse(response) {
 
 const api = { get, post, put, del };
 export default api;
-

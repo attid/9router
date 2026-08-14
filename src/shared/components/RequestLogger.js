@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect } from "react";
 import Card from "./Card";
 
@@ -25,7 +26,7 @@ export default function RequestLogger() {
   const fetchLogs = async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
-      const res = await fetch("/api/usage/request-logs");
+      const res = await fetch(withBasePath("/api/usage/request-logs"));
       if (res.ok) {
         const data = await res.json();
         setLogs(data);

@@ -5,8 +5,9 @@ import { CardSkeleton } from "@/shared/components";
 import { CLI_TOOLS, MITM_TOOLS } from "@/shared/constants/cliTools";
 import { MitmLinkCard } from "./components";
 import ToolSummaryCard from "./components/ToolSummaryCard";
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 
-const ALL_STATUSES_URL = "/api/cli-tools/all-statuses";
+const ALL_STATUSES_URL = withBasePath("/api/cli-tools/all-statuses");
 
 export default function CLIToolsPageClient({ machineId }) {
   const [loading, setLoading] = useState(true);
@@ -16,7 +17,7 @@ export default function CLIToolsPageClient({ machineId }) {
     let mounted = true;
     (async () => {
       try {
-        const res = await fetch(ALL_STATUSES_URL);
+        const res = await fetch(withBasePath(ALL_STATUSES_URL));
         if (res.ok && mounted) setToolStatuses(await res.json());
       } catch (error) {
         console.log("Error fetching tool statuses:", error);

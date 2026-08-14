@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
@@ -52,7 +53,7 @@ export default function ModelSelectModal({
 
   const fetchCombos = async () => {
     try {
-      const res = await fetch("/api/combos");
+      const res = await fetch(withBasePath("/api/combos"));
       if (!res.ok) throw new Error(`Failed to fetch combos: ${res.status}`);
       const data = await res.json();
       setCombos(data.combos || []);
@@ -68,7 +69,7 @@ export default function ModelSelectModal({
 
   const fetchProviderNodes = async () => {
     try {
-      const res = await fetch("/api/provider-nodes");
+      const res = await fetch(withBasePath("/api/provider-nodes"));
       if (!res.ok) throw new Error(`Failed to fetch provider nodes: ${res.status}`);
       const data = await res.json();
       setProviderNodes(data.nodes || []);
@@ -84,7 +85,7 @@ export default function ModelSelectModal({
 
   const fetchCustomModels = async () => {
     try {
-      const res = await fetch("/api/models/custom");
+      const res = await fetch(withBasePath("/api/models/custom"));
       if (!res.ok) throw new Error(`Failed to fetch custom models: ${res.status}`);
       const data = await res.json();
       setCustomModels(data.models || []);
@@ -100,7 +101,7 @@ export default function ModelSelectModal({
 
   const fetchDisabledModels = async () => {
     try {
-      const res = await fetch("/api/models/disabled");
+      const res = await fetch(withBasePath("/api/models/disabled"));
       if (!res.ok) throw new Error(`Failed to fetch disabled models: ${res.status}`);
       const data = await res.json();
       setDisabledModels(data.disabled || {});
@@ -494,7 +495,7 @@ export default function ModelSelectModal({
             {/* Provider header */}
             <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
               <ProviderIcon
-                src={`/providers/${providerId}.png`}
+                src={withBasePath(`/providers/${providerId}.png`)}
                 alt={group.name}
                 size={14}
                 fallbackText={(group.name || providerId).slice(0, 2).toUpperCase()}

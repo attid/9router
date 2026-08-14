@@ -2,6 +2,8 @@
  * TTS Provider Configuration
  * Centralized config for TTS provider UI behavior
  */
+import { apiPath } from "@/shared/utils/basePath.mjs";
+
 export const TTS_PROVIDER_CONFIG = {
   "google-tts": {
     hasLanguageDropdown: false,
@@ -34,7 +36,7 @@ export const TTS_PROVIDER_CONFIG = {
     hasVoiceIdInput: true, // allow manual voice id entry
     voiceSource: "api-language", // grouped by language from backend
     modelKey: "elevenlabs-tts-models",
-    apiEndpoint: "/api/media-providers/tts/elevenlabs/voices",
+    apiEndpoint: apiPath("/api/media-providers/tts/elevenlabs/voices"),
   },
   "edge-tts": {
     hasLanguageDropdown: false,
@@ -64,7 +66,7 @@ export const TTS_PROVIDER_CONFIG = {
     hasModelSelector: false,
     hasBrowseButton: true,
     voiceSource: "api-language",
-    apiEndpoint: "/api/media-providers/tts/deepgram/voices",
+    apiEndpoint: apiPath("/api/media-providers/tts/deepgram/voices"),
   },
   "huggingface": {
     hasModelSelector: true,
@@ -101,7 +103,7 @@ export const TTS_PROVIDER_CONFIG = {
     hasVoiceIdInput: true,
     voiceSource: "api-language",
     modelKey: "inworld-tts-models",
-    apiEndpoint: "/api/media-providers/tts/inworld/voices",
+    apiEndpoint: apiPath("/api/media-providers/tts/inworld/voices"),
   },
   "qwen": {
     hasModelSelector: true,
@@ -114,7 +116,7 @@ export const TTS_PROVIDER_CONFIG = {
     hasBrowseButton: true,
     hasVoiceIdInput: true,
     voiceSource: "api-language",
-    apiEndpoint: "/api/media-providers/tts/minimax/voices",
+    apiEndpoint: apiPath("/api/media-providers/tts/minimax/voices"),
     defaultVoiceId: "English_expressive_narrator",
   },
   "minimax-cn": {
@@ -122,7 +124,7 @@ export const TTS_PROVIDER_CONFIG = {
     hasBrowseButton: true,
     hasVoiceIdInput: true,
     voiceSource: "api-language",
-    apiEndpoint: "/api/media-providers/tts/minimax/voices?provider=minimax-cn",
+    apiEndpoint: apiPath("/api/media-providers/tts/minimax/voices?provider=minimax-cn"),
     defaultVoiceId: "English_expressive_narrator",
   },
   "gemini": {

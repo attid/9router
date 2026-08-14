@@ -1,10 +1,15 @@
+function scopedPath(path) {
+  const scopePath = new URL(self.registration.scope).pathname.replace(/\/$/, '')
+  return `${scopePath}${path}`
+}
+
 self.addEventListener('push', function (event) {
   if (event.data) {
     const data = event.data.json()
     const options = {
       body: data.body,
-      icon: data.icon || '/icons/icon-192.svg',
-      badge: '/icons/icon-192.svg',
+      icon: data.icon || scopedPath('/icons/icon-192.svg'),
+      badge: scopedPath('/icons/icon-192.svg'),
       vibrate: [100, 50, 100],
       data: {
         dateOfArrival: Date.now(),
@@ -18,5 +23,5 @@ self.addEventListener('push', function (event) {
 self.addEventListener('notificationclick', function (event) {
   console.log('Notification click received.')
   event.notification.close()
-  event.waitUntil(clients.openWindow('/'))
+  event.waitUntil(clients.openWindow(scopedPath('/')))
 })

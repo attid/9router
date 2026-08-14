@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useRef } from "react";
 import { Card, Button } from "@/shared/components";
 import { CONSOLE_LOG_CONFIG } from "@/shared/constants/config";
@@ -26,7 +27,7 @@ export default function ConsoleLogClient() {
 
   const handleClear = async () => {
     try {
-      await fetch("/api/translator/console-logs", { method: "DELETE" });
+      await fetch(withBasePath("/api/translator/console-logs"), { method: "DELETE" });
       // UI cleared via SSE "clear" event
     } catch (err) {
       console.error("Failed to clear console logs:", err);
@@ -34,7 +35,7 @@ export default function ConsoleLogClient() {
   };
 
   useEffect(() => {
-    const es = new EventSource("/api/translator/console-logs/stream");
+    const es = new EventSource(withBasePath("/api/translator/console-logs/stream"));
 
     es.onopen = () => setConnected(true);
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Modal } from "@/shared/components";
@@ -60,7 +61,7 @@ export default function BulkImportCodexModal({ isOpen, onClose, onSuccess }) {
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/oauth/codex/bulk-import", {
+      const res = await fetch(withBasePath("/api/oauth/codex/bulk-import"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accounts }),

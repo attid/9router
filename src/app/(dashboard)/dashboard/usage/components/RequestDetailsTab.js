@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useCallback, useRef } from "react";
 import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
@@ -17,7 +18,7 @@ async function fetchProviderNames() {
     return { providerNameCache, providerNodesCache };
   }
 
-  const nodesRes = await fetch("/api/provider-nodes");
+  const nodesRes = await fetch(withBasePath("/api/provider-nodes"));
   const nodesData = await nodesRes.json();
   const nodes = nodesData.nodes || [];
   providerNodesCache = {};
@@ -36,7 +37,7 @@ async function fetchProviderNames() {
 
 async function fetchApiKeyNames() {
   if (apiKeyNameCache) return apiKeyNameCache;
-  const response = await fetch("/api/keys?namesOnly=1");
+  const response = await fetch(withBasePath("/api/keys?namesOnly=1"));
   if (!response.ok) return {};
   const data = await response.json();
   apiKeyNameCache = {};
@@ -143,7 +144,7 @@ export default function RequestDetailsTab() {
 
   const fetchProviders = useCallback(async () => {
     try {
-      const res = await fetch("/api/usage/providers");
+      const res = await fetch(withBasePath("/api/usage/providers"));
       const data = await res.json();
       setProviders(data.providers || []);
 
@@ -166,7 +167,7 @@ export default function RequestDetailsTab() {
       if (filters.startDate) params.append("startDate", filters.startDate);
       if (filters.endDate) params.append("endDate", filters.endDate);
 
-      const res = await fetch(`/api/usage/request-details?${params}`);
+      const res = await fetch(withBasePath(`/api/usage/request-details?${params}`));
       const data = await res.json();
 
       setDetails(data.details || []);
@@ -213,7 +214,7 @@ export default function RequestDetailsTab() {
     setStreamTraceLoading(true);
     setStreamTraceError("");
     try {
-      const response = await fetch(`/api/usage/request-details/${encodeURIComponent(selectedDetail.id)}/stream-trace`, {
+      const response = await fetch(withBasePath(`/api/usage/request-details/${encodeURIComponent(selectedDetail.id)}/stream-trace`), {
         signal: controller.signal,
       });
       const data = await response.json();

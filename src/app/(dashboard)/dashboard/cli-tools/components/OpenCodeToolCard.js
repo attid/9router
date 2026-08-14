@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath, joinUrlPath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
@@ -65,7 +66,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
 
   const fetchModelAliases = async () => {
     try {
-      const res = await fetch("/api/models/alias");
+      const res = await fetch(withBasePath("/api/models/alias"));
       const data = await res.json();
       if (res.ok) setModelAliases(data.aliases || {});
     } catch (error) {
@@ -79,7 +80,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
         ? selectedApiKey
         : (!cloudEnabled ? "sk_9router" : selectedApiKey);
       const validActiveModel = models.includes(activeModel) ? activeModel : (models[0] || "");
-      await fetch("/api/cli-tools/opencode-settings", {
+      await fetch(withBasePath("/api/cli-tools/opencode-settings"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -107,15 +108,15 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
 
   const getEffectiveBaseUrl = () => {
     const url = customBaseUrl || baseUrl;
-    return url.endsWith("/v1") ? url : `${url}/v1`;
+    return url.endsWith("/v1") ? url : joinUrlPath(url, "/v1");
   };
 
-  const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
+  const getDisplayUrl = () => customBaseUrl || joinUrlPath(baseUrl, "/v1");
 
   const checkStatus = async () => {
     setChecking(true);
     try {
-      const res = await fetch("/api/cli-tools/opencode-settings");
+      const res = await fetch(withBasePath("/api/cli-tools/opencode-settings"));
       const data = await res.json();
       setStatus(data);
     } catch (error) {
@@ -133,7 +134,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
         ? selectedApiKey
         : (!cloudEnabled ? "sk_9router" : selectedApiKey);
 
-      const res = await fetch("/api/cli-tools/opencode-settings", {
+      const res = await fetch(withBasePath("/api/cli-tools/opencode-settings"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -162,7 +163,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
     setRestoring(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/cli-tools/opencode-settings", { method: "DELETE" });
+      const res = await fetch(withBasePath("/api/cli-tools/opencode-settings"), { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
@@ -222,7 +223,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
       <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
-            <Image src="/providers/opencode.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
+            <Image src={withBasePath("/providers/opencode.png")} alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
           </div>
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -334,7 +335,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                             onClick={async () => {
                               if (model === activeModel) {
                                 try {
-                                  const res = await fetch("/api/cli-tools/opencode-settings", {
+                                  const res = await fetch(withBasePath("/api/cli-tools/opencode-settings"), {
                                     method: "PATCH",
                                     headers: { "Content-Type": "application/json" },
                                     body: JSON.stringify({ clearActiveModel: true }),
@@ -363,7 +364,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 try {
-                                  const res = await fetch(`/api/cli-tools/opencode-settings?model=${encodeURIComponent(model)}`, { method: "DELETE" });
+                                  const res = await fetch(withBasePath(`/api/cli-tools/opencode-settings?model=${encodeURIComponent(model)}`), { method: "DELETE" });
                                   if (res.ok) {
                                     const newModels = selectedModels.filter((m) => m !== model);
                                     setSelectedModels(newModels);

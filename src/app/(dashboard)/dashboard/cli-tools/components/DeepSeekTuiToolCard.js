@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath, appUrl, joinUrlPath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
@@ -7,7 +8,7 @@ import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
-const ENDPOINT = "/api/cli-tools/deepseek-tui-settings";
+const ENDPOINT = withBasePath("/api/cli-tools/deepseek-tui-settings");
 
 export default function DeepSeekTuiToolCard({
   tool,
@@ -67,7 +68,7 @@ export default function DeepSeekTuiToolCard({
 
   const fetchModelAliases = async () => {
     try {
-      const res = await fetch("/api/models/alias");
+      const res = await fetch(withBasePath("/api/models/alias"));
       const data = await res.json();
       if (res.ok) setModelAliases(data.aliases || {});
     } catch (error) {
@@ -86,7 +87,7 @@ export default function DeepSeekTuiToolCard({
   const checkStatus = async () => {
     setChecking(true);
     try {
-      const res = await fetch(ENDPOINT);
+      const res = await fetch(withBasePath(ENDPOINT));
       const data = await res.json();
       setDeepseekStatus(data);
     } catch (error) {
@@ -100,14 +101,14 @@ export default function DeepSeekTuiToolCard({
 
   const getLocalBaseUrl = () => {
     if (typeof window !== "undefined") {
-      return normalizeLocalhost(window.location.origin);
+      return appUrl("", normalizeLocalhost(window.location.origin));
     }
-    return "http://127.0.0.1:20128";
+    return appUrl("", "http://127.0.0.1:20128");
   };
 
   const getEffectiveBaseUrl = () => {
     const url = customBaseUrl || getLocalBaseUrl();
-    return url.endsWith("/v1") ? url : `${url}/v1`;
+    return url.endsWith("/v1") ? url : joinUrlPath(url, "/v1");
   };
 
   const handleApply = async () => {
@@ -118,7 +119,7 @@ export default function DeepSeekTuiToolCard({
         || (apiKeys?.length > 0 ? apiKeys[0].key : null)
         || (!cloudEnabled ? "sk_9router" : null);
 
-      const res = await fetch(ENDPOINT, {
+      const res = await fetch(withBasePath(ENDPOINT), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -145,7 +146,7 @@ export default function DeepSeekTuiToolCard({
     setRestoring(true);
     setMessage(null);
     try {
-      const res = await fetch(ENDPOINT, { method: "DELETE" });
+      const res = await fetch(withBasePath(ENDPOINT), { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
@@ -187,7 +188,7 @@ model = "${selectedModel || "provider/model-id"}"
       <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
-            <Image src={tool.image || "/providers/deepseek-tui.png"} alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
+            <Image src={tool.image || withBasePath("/providers/deepseek-tui.png")} alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
           </div>
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-2">

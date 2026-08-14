@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath, appUrl, joinUrlPath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect } from "react";
 import { Card } from "@/shared/components";
 import { getProviderAlias } from "@/shared/constants/providers";
@@ -35,17 +36,17 @@ export function SttExampleCard({ providerId }) {
   const { copied: copiedRes, copy: copyRes } = useCopyToClipboard();
 
   useEffect(() => {
-    setLocalEndpoint(window.location.origin);
-    fetch("/api/keys")
+    setLocalEndpoint(appUrl("", window.location.origin));
+    fetch(withBasePath("/api/keys"))
       .then((r) => r.json())
       .then((d) => { setApiKey((d.keys || []).find((k) => k.isActive !== false)?.key || ""); })
       .catch(() => {});
-    fetch("/api/tunnel/status")
+    fetch(withBasePath("/api/tunnel/status"))
       .then((r) => r.json())
-      .then((d) => { if (d.publicUrl) setTunnelEndpoint(d.publicUrl); })
+      .then((d) => { if (d.publicUrl) setTunnelEndpoint(appUrl("", d.publicUrl)); })
       .catch(() => {});
     const loadCustom = () => {
-      fetch("/api/models/custom", { cache: "no-store" })
+      fetch(withBasePath("/api/models/custom"), { cache: "no-store" })
         .then((r) => r.json())
         .then((d) => {
           const list = (d.models || []).filter((m) => getModelKind(m) === "stt" && m.providerAlias === providerAlias);
@@ -65,7 +66,7 @@ export function SttExampleCard({ providerId }) {
   const endpoint = useTunnel ? tunnelEndpoint : localEndpoint;
   const modelFull = selectedModel ? `${providerAlias}/${selectedModel}` : "";
 
-  const curlSnippet = `curl -X POST ${endpoint}/v1/audio/transcriptions \\
+  const curlSnippet = `curl -X POST ${joinUrlPath(endpoint, "/v1/audio/transcriptions")} \\
   -H "Authorization: Bearer ${apiKey || "YOUR_KEY"}" \\
   -F "file=@${audioFile?.name || "audio.mp3"}" \\
   -F "model=${modelFull}"${allowedParams.includes("language") && language ? ` \\\n  -F "language=${language}"` : ""}${allowedParams.includes("response_format") ? ` \\\n  -F "response_format=${responseFormat}"` : ""}${allowedParams.includes("temperature") && temperature ? ` \\\n  -F "temperature=${temperature}"` : ""}${allowedParams.includes("prompt") && prompt ? ` \\\n  -F "prompt=${prompt}"` : ""}`;
@@ -87,7 +88,7 @@ export function SttExampleCard({ providerId }) {
 
       const headers = {};
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-      const res = await fetch("/api/v1/audio/transcriptions", { method: "POST", headers, body: fd });
+      const res = await fetch(withBasePath("/api/v1/audio/transcriptions"), { method: "POST", headers, body: fd });
       setLatency(Date.now() - start);
       const ct = res.headers.get("content-type") || "";
       const data = ct.includes("application/json") ? await res.json() : await res.text();
@@ -137,7 +138,7 @@ export function SttExampleCard({ providerId }) {
         <Row label="Endpoint">
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             <span className="w-full min-w-0 flex-1 px-3 py-1.5 text-sm font-mono text-text-main bg-sidebar rounded-lg truncate">
-              {endpoint}/v1/audio/transcriptions
+              {joinUrlPath(endpoint, "/v1/audio/transcriptions")}
             </span>
             {tunnelEndpoint && (
               <button

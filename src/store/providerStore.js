@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { create } from "zustand";
 import { CLIENT_STORE_TTL_MS } from "@/shared/constants/config";
 
@@ -38,7 +39,7 @@ const useProviderStore = create((set, get) => ({
     if (!force && providers.length > 0 && Date.now() - lastFetched < CLIENT_STORE_TTL_MS) return;
     set({ loading: true, error: null });
     try {
-      const response = await fetch("/api/providers");
+      const response = await fetch(withBasePath("/api/providers"));
       const data = await response.json();
       if (response.ok) {
         set({ providers: data.connections || data.providers || [], loading: false, lastFetched: Date.now() });

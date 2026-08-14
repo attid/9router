@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Button, Modal } from "@/shared/components";
@@ -27,7 +28,7 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
     setTestStatus("testing");
     setTestError("");
     try {
-      const res = await fetch("/api/models/test", {
+      const res = await fetch(withBasePath("/api/models/test"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: `${providerAlias}/${cleanId}` }),

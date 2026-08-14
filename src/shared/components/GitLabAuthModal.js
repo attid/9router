@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath, appUrl } from "@/shared/utils/basePath.mjs";
 import { useState } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input, OAuthModal } from "@/shared/components";
@@ -7,9 +8,9 @@ import { Modal, Button, Input, OAuthModal } from "@/shared/components";
 const GITLAB_COM = "https://gitlab.com";
 
 function getRedirectUri() {
-  if (typeof window === "undefined") return "http://localhost/callback";
+  if (typeof window === "undefined") return appUrl("/callback", "http://localhost");
   const port = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
-  return `http://localhost:${port}/callback`;
+  return appUrl("/callback", `http://localhost:${port}`);
 }
 
 /**
@@ -64,7 +65,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/oauth/gitlab/pat", {
+      const res = await fetch(withBasePath("/api/oauth/gitlab/pat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: pat.trim(), baseUrl: baseUrl.trim() || GITLAB_COM }),

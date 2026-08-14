@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath, joinUrlPath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
@@ -55,7 +56,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
 
   const fetchModelAliases = async () => {
     try {
-      const res = await fetch("/api/models/alias");
+      const res = await fetch(withBasePath("/api/models/alias"));
       const data = await res.json();
       if (res.ok) setModelAliases(data.aliases || {});
     } catch (error) {
@@ -68,7 +69,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
       const keyToUse = (selectedApiKey && selectedApiKey.trim())
         ? selectedApiKey
         : (!cloudEnabled ? "sk_9router" : selectedApiKey);
-      await fetch("/api/cli-tools/copilot-settings", {
+      await fetch(withBasePath("/api/cli-tools/copilot-settings"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ baseUrl: getEffectiveBaseUrl(), apiKey: keyToUse, models }),
@@ -89,17 +90,17 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
 
   const getEffectiveBaseUrl = () => {
     const url = customBaseUrl || baseUrl;
-    return url.endsWith("/v1") ? url : `${url}/v1`;
+    return url.endsWith("/v1") ? url : joinUrlPath(url, "/v1");
   };
 
-  const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
+  const getDisplayUrl = () => customBaseUrl || joinUrlPath(baseUrl, "/v1");
 
   const removeModel = (id) => setSelectedModels((prev) => prev.filter((m) => m !== id));
 
   const checkStatus = async () => {
     setChecking(true);
     try {
-      const res = await fetch("/api/cli-tools/copilot-settings");
+      const res = await fetch(withBasePath("/api/cli-tools/copilot-settings"));
       const data = await res.json();
       setStatus(data);
     } catch (error) {
@@ -117,7 +118,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
         ? selectedApiKey
         : (!cloudEnabled ? "sk_9router" : selectedApiKey);
 
-      const res = await fetch("/api/cli-tools/copilot-settings", {
+      const res = await fetch(withBasePath("/api/cli-tools/copilot-settings"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ baseUrl: getEffectiveBaseUrl(), apiKey: keyToUse, models: selectedModels }),
@@ -140,7 +141,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
     setRestoring(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/cli-tools/copilot-settings", { method: "DELETE" });
+      const res = await fetch(withBasePath("/api/cli-tools/copilot-settings"), { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
@@ -184,7 +185,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
       <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
-            <Image src="/providers/copilot.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
+            <Image src={withBasePath("/providers/copilot.png")} alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
           </div>
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-2">

@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useCallback } from "react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -31,10 +32,10 @@ export default function CombosPage() {
   const fetchData = async () => {
     try {
       const [combosRes, providersRes, settingsRes, modelsRes] = await Promise.all([
-        fetch("/api/combos"),
-        fetch("/api/providers"),
-        fetch("/api/settings"),
-        fetch("/api/models"),
+        fetch(withBasePath("/api/combos")),
+        fetch(withBasePath("/api/providers")),
+        fetch(withBasePath("/api/settings")),
+        fetch(withBasePath("/api/models")),
       ]);
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
@@ -62,7 +63,7 @@ export default function CombosPage() {
 
   const handleCreate = async (data) => {
     try {
-      const res = await fetch("/api/combos", {
+      const res = await fetch(withBasePath("/api/combos"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -81,7 +82,7 @@ export default function CombosPage() {
 
   const handleUpdate = async (id, data) => {
     try {
-      const res = await fetch(`/api/combos/${id}`, {
+      const res = await fetch(withBasePath(`/api/combos/${id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -105,7 +106,7 @@ export default function CombosPage() {
       onConfirm: async () => {
         setConfirmState(null);
         try {
-          const res = await fetch(`/api/combos/${id}`, { method: "DELETE" });
+          const res = await fetch(withBasePath(`/api/combos/${id}`), { method: "DELETE" });
           if (res.ok) {
             setCombos(combos.filter(c => c.id !== id));
           }
@@ -129,7 +130,7 @@ export default function CombosPage() {
         updated[comboName] = next;
       }
 
-      await fetch("/api/settings", {
+      await fetch(withBasePath("/api/settings"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ comboStrategies: updated }),
@@ -526,7 +527,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
 
   const fetchModalData = async () => {
     try {
-      const aliasesRes = await fetch("/api/models/alias");
+      const aliasesRes = await fetch(withBasePath("/api/models/alias"));
       if (!aliasesRes.ok) return;
       const aliasesData = await aliasesRes.json();
       setModelAliases(aliasesData.aliases || {});

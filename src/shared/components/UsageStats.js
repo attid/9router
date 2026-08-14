@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
@@ -221,8 +222,8 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   // Always include noAuth free providers (e.g. opencode) regardless of connections
   useEffect(() => {
     Promise.all([
-      fetch("/api/providers").then((r) => r.ok ? r.json() : null),
-      fetch("/api/provider-nodes").then((r) => r.ok ? r.json() : null),
+      fetch(withBasePath("/api/providers")).then((r) => r.ok ? r.json() : null),
+      fetch(withBasePath("/api/provider-nodes")).then((r) => r.ok ? r.json() : null),
     ])
       .then(([d, nodesData]) => {
         // Build node name lookup for custom providers
@@ -259,7 +260,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       setFetching(true);
     }
 
-    fetch(`/api/usage/stats?period=${period}`)
+    fetch(withBasePath(`/api/usage/stats?period=${period}`))
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data) {
@@ -276,7 +277,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
   // SSE connection - real-time updates for activeRequests + recentRequests only
   useEffect(() => {
-    const es = new EventSource("/api/usage/stream");
+    const es = new EventSource(withBasePath("/api/usage/stream"));
 
     es.onmessage = (e) => {
       try {

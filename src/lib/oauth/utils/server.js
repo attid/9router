@@ -1,6 +1,7 @@
 import http from "http";
 import { URL } from "url";
 import { CODEX_CONFIG } from "../constants/oauth.js";
+import { appUrl } from "../../../shared/utils/basePath.mjs";
 
 /**
  * Start a local HTTP server to receive OAuth callback
@@ -249,7 +250,7 @@ export function startCodexProxy(appPort) {
       }
 
       // Mode B: legacy channel fallback — 302 redirect to app /callback
-      const redirectUrl = `http://localhost:${appPort}/callback${url.search}`;
+      const redirectUrl = appUrl(`/callback${url.search}`, `http://localhost:${appPort}`);
       res.writeHead(302, { Location: redirectUrl });
       res.end();
       stopCodexProxy();
@@ -391,7 +392,7 @@ export function startXaiProxy(appPort) {
       }
 
       // Mode B: legacy fallback redirect
-      const redirectUrl = `http://localhost:${appPort}/callback${url.search}`;
+      const redirectUrl = appUrl(`/callback${url.search}`, `http://localhost:${appPort}`);
       res.writeHead(302, { Location: redirectUrl });
       res.end();
       stopXaiProxy();
@@ -423,4 +424,3 @@ export function stopXaiProxy() {
     xaiProxyServer = null;
   }
 }
-

@@ -1,5 +1,6 @@
 "use client";
 
+import { apiPath as withBasePath } from "@/shared/utils/basePath.mjs";
 import { useState, useEffect } from "react";
 import { getDefaultPricing, formatCost } from "open-sse/providers/pricing.js";
 
@@ -17,7 +18,7 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
   const loadPricing = async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/pricing");
+      const response = await fetch(withBasePath("/api/pricing"));
       if (response.ok) {
         const data = await response.json();
         setPricingData(data);
@@ -51,7 +52,7 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const response = await fetch("/api/pricing", {
+      const response = await fetch(withBasePath("/api/pricing"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(pricingData)
@@ -76,7 +77,7 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
     if (!confirm("Reset all pricing to defaults? This cannot be undone.")) return;
 
     try {
-      const response = await fetch("/api/pricing", { method: "DELETE" });
+      const response = await fetch(withBasePath("/api/pricing"), { method: "DELETE" });
       if (response.ok) {
         const defaults = getDefaultPricing();
         setPricingData(defaults);
