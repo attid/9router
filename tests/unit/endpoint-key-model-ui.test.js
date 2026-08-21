@@ -52,4 +52,17 @@ describe("endpoint API-key model controls", () => {
     expect(source).toContain("Allowed models");
     expect(source).toContain("Leave empty to allow all models.");
   });
+
+  it("allows an exact model ID to be added when discovery does not list it", () => {
+    expect(source).toContain("allowManualEntry");
+
+    const modalSource = fs.readFileSync(
+      path.resolve(repoRoot, "src/shared/components/ModelSelectModal.js"),
+      "utf8"
+    );
+    expect(modalSource).toContain('placeholder="provider/model-id"');
+    expect(modalSource).toContain("manualModelId.trim()");
+    expect(modalSource).toContain("requestValue: value");
+    expect(modalSource).toContain("addedModelValues.includes(value)");
+  });
 });

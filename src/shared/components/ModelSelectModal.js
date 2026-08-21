@@ -33,6 +33,7 @@ export default function ModelSelectModal({
   addedModelValues = [],
   closeOnSelect = true,
   useRequestFacingValues = false,
+  allowManualEntry = false,
 }) {
   // Filter activeProviders by serviceKinds when kindFilter set (e.g. "webSearch", "webFetch")
   const filteredActiveProviders = useMemo(() => {
@@ -49,6 +50,7 @@ export default function ModelSelectModal({
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
+  const [manualModelId, setManualModelId] = useState("");
 
   const fetchCombos = async () => {
     try {
@@ -416,12 +418,26 @@ export default function ModelSelectModal({
     }
   };
 
+  const handleManualAdd = (event) => {
+    event.preventDefault();
+    const value = manualModelId.trim();
+    if (!value || addedModelValues.includes(value)) return;
+
+    onSelect({ id: value, name: value, value, requestValue: value, isCustom: true });
+    setManualModelId("");
+  };
+
+  const handleManualRemove = (value) => {
+    onDeselect?.({ id: value, name: value, value, requestValue: value, isCustom: true });
+  };
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={() => {
         onClose();
         setSearchQuery("");
+        setManualModelId("");
       }}
       title={title}
       size="md"
@@ -449,6 +465,48 @@ export default function ModelSelectModal({
           />
         </div>
       </div>
+
+      {allowManualEntry && (
+        <div className="mb-3 rounded-lg border border-border bg-black/[0.02] p-2.5 dark:bg-white/[0.02]">
+          <p className="mb-2 text-xs font-medium text-text-main">Exact model ID</p>
+          <form onSubmit={handleManualAdd} className="flex gap-2">
+            <input
+              type="text"
+              placeholder="provider/model-id"
+              value={manualModelId}
+              onChange={(event) => setManualModelId(event.target.value)}
+              className="min-w-0 flex-1 rounded border border-border bg-surface px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+            />
+            <button
+              type="submit"
+              disabled={!manualModelId.trim() || addedModelValues.includes(manualModelId.trim())}
+              className="rounded bg-primary px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Add
+            </button>
+          </form>
+          <p className="mt-1.5 text-[10px] text-text-muted">
+            Use the exact request model when it is not listed below.
+          </p>
+          {addedModelValues.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {addedModelValues.map((value) => (
+                <span key={value} className="inline-flex max-w-full items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[10px] text-primary">
+                  <span className="truncate">{value}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleManualRemove(value)}
+                    className="shrink-0 hover:text-red-500"
+                    title={`Remove ${value}`}
+                  >
+                    <span className="material-symbols-outlined text-[11px]">close</span>
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Models grouped by provider - compact */}
       <div className="max-h-[400px] overflow-y-auto space-y-3">
@@ -589,4 +647,5 @@ ModelSelectModal.propTypes = {
   addedModelValues: PropTypes.arrayOf(PropTypes.string),
   closeOnSelect: PropTypes.bool,
   useRequestFacingValues: PropTypes.bool,
+  allowManualEntry: PropTypes.bool,
 };

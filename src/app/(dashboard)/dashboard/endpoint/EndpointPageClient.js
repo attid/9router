@@ -1435,6 +1435,7 @@ export default function APIPageClient({ machineId }) {
         addedModelValues={selectedAllowedModels}
         closeOnSelect={false}
         useRequestFacingValues
+        allowManualEntry
         title={modelSelectTarget === "create" ? "Allowed models for new key" : "Allowed models"}
       />
 
